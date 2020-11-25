@@ -1,3 +1,5 @@
 /CompilationEngine.class
 /JackCompiler.class
 /Tokenizer.class
+/VMWriter.class
+/SymbolTable.class

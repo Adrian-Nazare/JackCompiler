@@ -1,6 +1,7 @@
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.*;
 
 
 
@@ -8,9 +9,17 @@ public class JackCompiler{
     
     public static void main(String args[]){
     	
-    	 System.out.println("Testing");
-    	 
-    	 
+    	
+    	HashMap<String, List<Object>> classTable = new HashMap<String, List<Object>>();
+        classTable.put("george", Arrays.asList("Pointer", 3));
+        System.out.println(classTable.get("george").getClass().getName());
+        System.out.println(classTable.get("george").get(0).getClass().getName());
+        System.out.println(classTable.get("george").get(1).getClass().getName());
+        
+        if (classTable.get("patron") == null)
+        	System.out.println("Caught it!");
+        else System.out.println(classTable.get("patron").getClass().getName());
+        
         //checks for the correct number of arguments
         if (args.length != 1){
             System.out.println (String.format("Invalid number of arguments passed: %d.\nPlease pass 1 argument, "
@@ -106,23 +115,4 @@ public class JackCompiler{
     }
     
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
