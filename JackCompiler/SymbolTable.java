@@ -5,7 +5,7 @@ import java.util.List;
 
 public class SymbolTable {
 	
-	final int NONE=0, STATIC=1, FIELD=2, ARG=3, VAR=4;
+	final int NONE=26, STATIC=10, FIELD=9, ARG=27, VAR=11;
 	String inputFileName;
 	
 	//List<Object> classListEntries;
@@ -17,6 +17,9 @@ public class SymbolTable {
 	
 	public SymbolTable (File inputFile) {
 		inputFileName = inputFile.getName();
+	}
+	
+	public void startClass() {
 		classTable = new HashMap<String, List<Object>>();
 		staticIndex = 0;
 		fieldIndex = 0;

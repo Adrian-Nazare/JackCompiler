@@ -1,19 +1,24 @@
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+//import java.util.HashMap;
+import java.util.Map;
+//import java.util.List;
 
 public class CompilationEngine {
 	//Declaring & initialising the constants 
     final int KEYWORD=0, SYMBOL=1, INT_CONST=2, STRING_CONST=3, IDENTIFIER=4;
     final int CLASS=5, CONSTRUCTOR=6, FUNCTION=7, METHOD=8, FIELD=9, STATIC=10, 
     		  VAR=11, INT=12, CHAR=13, BOOLEAN=14, VOID=15, TRUE=16, FALSE=17, 
-    		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25;
+    		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25,
+    		  NONE=26, ARG=27;
     char[] op = {'+', '-', '*', '/', '&', '|', '<', '>', '='};
     
 	Tokenizer tokenizer;
     PrintWriter writer;
+    SymbolTable symbolTable;
+    Map<Character, String> arithmeticOpMap;
     
-    int index, indentation; //Used for indenting each token depending on the hierarchy, for better human readability
     String inputFileName;
     int tokenNumber;
     
@@ -23,16 +28,26 @@ public class CompilationEngine {
     int keyword; // the numeric code for the keyword, if token is of keyword type
     char symbol; //the char value of the symbol, it token is of symbol type
     //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
+    
+    String className;
     	
 	//constructor
 	public CompilationEngine(File inputFile, File outputFile) {
         try {
             writer = new PrintWriter(outputFile);    
     		tokenizer = new Tokenizer(inputFile);
+    		symbolTable = new SymbolTable(inputFile);
     		
     		inputFileName = inputFile.getName();
-    		indentation = 0;
-    		
+    		arithmeticOpMap = Map.of('+', "add", 
+    							  '-', "sub",
+    							  '*', "call Math.multiply 2",
+    							  '/', "call Math.divide 2,",
+    							  '=', "eq",
+    							  '>', "gt", 
+    							  '<', "lt", 
+    							  '&', "and",
+    							  '|', "or");
     		current = tokenizer.getToken();
     		tokenType = tokenizer.getTokenType();
     		if (tokenType == KEYWORD)
@@ -57,11 +72,11 @@ public class CompilationEngine {
 	}
 	
 	private void compileClass() {
-		printBody("<class>\n"); //a private function for printing text with the necessary indentation
-		indentation++; //we increase the indentation every time we hand over the syntax analysis to another compileXXX() method
+		symbolTable.startClass();
 		
-		eatKeyword(CLASS); //we check for and process the 'class' keyword
-		eatIdentifier(); //we check for and process an identifier for className
+		eatKeyword(CLASS); //we check for the 'class' keyword
+		className = inputFileName.substring(0, inputFileName.lastIndexOf(".vm"));
+		eatIdentifier(className); //we check for and process an identifier for className
 		eatSymbol('{');	//we check for and process the opening curly bracket
 		
 		//as long as we keep encountering 'static' or 'field', it means that we have a class variable declaration, and we keep invoking compileClassVarDec
@@ -75,41 +90,39 @@ public class CompilationEngine {
 		}
 		
 		eatSymbol('}');	//we check for and process the closing curly bracket
-		
-		indentation--;			
-		printBody("</class>\n");
+
 	}
 	
 	private void compileClassVarDec() {
-		printBody("<classVarDec>\n");
-		indentation++;
-		
+		int classVarKind = keyword;
 		eatKeyword(STATIC, FIELD);
-		
-		//encapsulated code to check the type of the variable, consisting of calls to 
-		//eatKeyword(char... args) for int, char and boolean, and to eatIdentifier() for className
+
+		String classVarType = current;
 		eatType();
+		
+		String classVarName = current;
 		eatIdentifier();
 		
+		symbolTable.define(classVarName, classVarType, classVarKind);
 		//while encountering commas, we keep processing the comma, together with an expected variable name
 		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
+			className = current;
 			eatIdentifier();
+			symbolTable.define(classVarName, classVarType, classVarKind);
 		}
 		
 		eatSymbol(';');
-		
-		indentation--;	
-		printBody("</classVarDec>\n");
 	}
 	
 	private void compileSubroutineDec() {
-		printBody("<subroutineDec>\n");
-		indentation++;
+		symbolTable.startSubroutine();
 		
+		int currentSubroutineType = keyword;
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
 		
 		//process a void, or int/char/boolean/className returning type for the subroutine
+		String currentSubroutineReturnType = current;
 		if ((tokenType == KEYWORD) && (keyword == VOID))
 			eatKeyword(VOID);
 		else
@@ -117,36 +130,44 @@ public class CompilationEngine {
 		
 		eatIdentifier(); //process an identifier for the subroutineName
 		eatSymbol('(');
+		
+		if (currentSubroutineType == METHOD)
+			symbolTable.define("this", className, ARG);
 		compileParameterList();
 		eatSymbol(')');
-		compileSubroutineBody();
-				
-		indentation--;	
-		printBody("</subroutineDec>\n");
+		
+		
+		compileSubroutineBody();	
+
 	}	
 	
 	private void compileParameterList() {
-		printBody("<parameterList>\n");
-		indentation++;
+
 		// ? -> if we have a token corresponding to a type declaration, the method starts processing the variable declarations
+		String currentSubroutineVarType = current;
 		if (((tokenType == KEYWORD) && ((keyword == INT) || (keyword == CHAR) || (keyword == BOOLEAN))) ||
 				(tokenType == IDENTIFIER) ) {
 			eatType(); //process the type
+			
+			String currentSubroutineVarName = current;
 			eatIdentifier(); //process the variable name
+			
+			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
+			
 			// * -> if we encounter a comma, it means we have multiple variables, and we keep processing them until no more commas are found
 			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 				eatSymbol(',');
+				
+				currentSubroutineVarType = current;
 				eatType();
+				currentSubroutineVarName = current;
 				eatIdentifier();
+				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
 			}
 		}	
-		indentation--;	
-		printBody("</parameterList>\n");
 	}	
 	
 	private void compileSubroutineBody() {
-		printBody("<subroutineBody>\n");
-		indentation++;
 		
 		eatSymbol('{');
 		while ((tokenType == KEYWORD) && (keyword == VAR)) {
@@ -155,14 +176,10 @@ public class CompilationEngine {
 		compileStatements();
 		eatSymbol('}');
 		
-		indentation--;	
-		printBody("</subroutineBody>\n");
 		
 	}	
 	
 	private void compileVarDec() {
-		printBody("<varDec>\n");
-		indentation++;
 		
 		eatKeyword(VAR);
 		eatType();
@@ -173,14 +190,10 @@ public class CompilationEngine {
 		}
 		eatSymbol(';');
 		
-		indentation--;	
-		printBody("</varDec>\n");
 		
 	}	
 	
 	private void compileStatements() {
-		printBody("<statements>\n");
-		indentation++;
 		
 		while ((tokenType == KEYWORD) && ((keyword == LET) || (keyword == IF)
 				|| (keyword == WHILE) || (keyword == DO) || (keyword == RETURN))) {
@@ -195,14 +208,10 @@ public class CompilationEngine {
 			else //the last choice: if (keyword= = RETURN)
 				compileReturnStatement();
 		}
-		
-		indentation--;	
-		printBody("</statements>\n");
+
 	}	
 	
 	private void compileLetStatement() {
-		printBody("<letStatement>\n");
-		indentation++;
 		
 		eatKeyword(LET);
 		eatIdentifier();
@@ -215,13 +224,9 @@ public class CompilationEngine {
 		compileExpression();
 		eatSymbol(';');
 		
-		indentation--;	
-		printBody("</letStatement>\n");
 	}	
 	
 	private void compileIfStatement() {
-		printBody("<ifStatement>\n");
-		indentation++;
 		
 		eatKeyword(IF);
 		eatSymbol('(');
@@ -236,13 +241,9 @@ public class CompilationEngine {
 			compileStatements();
 			eatSymbol('}');
 		}		
-		indentation--;	
-		printBody("</ifStatement>\n");
 	}	
 	
 	private void compileWhileStatement() {
-		printBody("<whileStatement>\n");
-		indentation++;
 		
 		eatKeyword(WHILE);
 		eatSymbol('(');
@@ -251,14 +252,10 @@ public class CompilationEngine {
 		eatSymbol('{');
 		compileStatements();
 		eatSymbol('}');
-		
-		indentation--;	
-		printBody("</whileStatement>\n");
+
 	}	
 	
 	private void compileDoStatement() {
-		printBody("<doStatement>\n");
-		indentation++;
 		
 		eatKeyword(DO);
 		//Subroutine Call
@@ -284,26 +281,18 @@ public class CompilationEngine {
 		}
 		eatSymbol(';');
 		
-		indentation--;	
-		printBody("</doStatement>\n");
 	}
 	
 	private void compileReturnStatement() {
-		printBody("<returnStatement>\n");
-		indentation++;
-		
+
 		eatKeyword(RETURN);
 		if (isExpression())
 			compileExpression();
 		eatSymbol(';');
-		
-		indentation--;	
-		printBody("</returnStatement>\n");
+
 	}	
 
 	private void compileExpression() {
-		printBody("<expression>\n");
-		indentation++;
 		
 		compileTerm();
 		while ((tokenType == SYMBOL) && contains(op, symbol) ) {
@@ -311,13 +300,9 @@ public class CompilationEngine {
 			compileTerm();
 		}
 		
-		indentation--;	
-		printBody("</expression>\n");
 	}	
 	
 	private void compileTerm() {
-		printBody("<term>\n");
-		indentation++;
 		
 		if (tokenType == INT_CONST)
 			eatIntegerConstant();
@@ -383,13 +368,9 @@ public class CompilationEngine {
 			System.exit(0); 
 		}
 
-		indentation--;	
-		printBody("</term>\n");
 	}
 	
 	private void compileExpressionList() {
-		printBody("<expressionList>\n");
-		indentation++;
 		
 		if (isExpression()) {
 			compileExpression();
@@ -399,81 +380,100 @@ public class CompilationEngine {
 			}
 		}
 		
-		indentation--;	
-		printBody("</expressionList>\n");
 	}	
 	
-	private void eatKeyword(int... correctKeywords) {
+	private boolean eatKeyword(int... correctKeywords) {
 		if (tokenType == KEYWORD) {
 			for (int correctKeyword: correctKeywords) {
 				if (keyword == correctKeyword) {
-					printToken(); 
 					advance();
-					return;
+					return true;
 				}			
 			}
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect keyword", inputFileName, tokenizer.getLine()));
 			System.exit(0);
+			return false;
 		}
 		System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect token, expected keyword", inputFileName, tokenizer.getLine()));
 		System.exit(0);
+		return false;
 	}
 	
-	private void eatSymbol(char... correctSymbols) {
+	private boolean eatSymbol(char... correctSymbols) {
 		if (tokenType == SYMBOL) {
 			for (char correctSymbol : correctSymbols) {
 				 if (symbol == correctSymbol) { 
-					 printToken(); //a private method for printing the token after the required indentation
 					 advance();
-					 return;
+					 return true;
 				 }
 			}
-			System.out.println(String.format("Syntax Error: in file \"%s\" at line %d, incorrect symbol, expected '%s'", inputFileName, tokenizer.getLine(), symbol));
+			System.out.println(String.format("Syntax Error: in file \"%s\" at line %d, incorrect symbol, expected one of: ", inputFileName, tokenizer.getLine()));
+			System.out.println(correctSymbols);
 			System.exit(0);
+			return false;
 		}
-		System.out.println(String.format("Syntax Error: in file \"%s\" at line %d: incorrect token type, expected symbol: '%s'", inputFileName, tokenizer.getLine(), symbol));
+		System.out.println(String.format("Syntax Error: in file \"%s\" at line %d: incorrect token type, expected symbol, one of following: ", inputFileName, tokenizer.getLine(), symbol));
+		System.out.println(correctSymbols);
 		System.exit(0);
+		return false;
 	}
 	
-	private void eatIntegerConstant() {
+	private boolean eatIntegerConstant() {
 		if (tokenType == INT_CONST) {
-			printToken();
-			advance(); }
+			advance();
+			return true;}
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected integer constant", inputFileName, tokenizer.getLine()));
 			System.exit(0);
+			return false;
 		}
 	}
 	
-	private void eatStringConstant() {
+	private boolean eatStringConstant() {
 		if (tokenType == STRING_CONST) {
-			printToken();
-			advance(); }
+				advance(); 
+				return true;
+			}
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected string constant", inputFileName, tokenizer.getLine()));
 			System.exit(0);
+			return false;
 		}
 	}
 	
-	private void eatIdentifier() {
+	private boolean eatIdentifier(String... correctIdentifiers) {
 		if (tokenType == IDENTIFIER) {
-			printToken();
-			advance(); }
-		else {
-			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected identifier", inputFileName, tokenizer.getLine()));
-			System.exit(0);
+			if (correctIdentifiers.length == 0) {
+				advance();	
+				return true;
+			}
+			else if (correctIdentifiers.length != 0) {
+				for (String correctIdentifier : correctIdentifiers) {
+					if (current == correctIdentifier) {
+						advance();	
+						return true;
+					}
+				}
+				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected one of following identifiers:", inputFileName, tokenizer.getLine()));
+				System.out.println(correctIdentifiers);
+				return false;
+			}
 		}
+		System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected identifier", inputFileName, tokenizer.getLine()));
+		System.exit(0);
+		return false;
 	}
 	
-	private void eatType() {
+	private boolean eatType() {
 		if (tokenType == KEYWORD)
-			eatKeyword(INT, CHAR, BOOLEAN);
+			return eatKeyword(INT, CHAR, BOOLEAN);
 		else if (tokenType == IDENTIFIER)
-			eatIdentifier();
+			return eatIdentifier();
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected a type "
 					+ "declaration (int, char, boolean, or a className)", inputFileName, tokenizer.getLine()));
 			System.exit(0);
+			return false;
 		}
 	}
 	
@@ -506,23 +506,17 @@ public class CompilationEngine {
 		return false;
 	}
 	
-	private void printBody(String input) {
-		for (index = 0; index < indentation; index ++) {
-			writer.format(" ");
-			System.out.print(" ");
-		}
+/*	private void printBody(String input) {
+
 		writer.format(input);
 		System.out.print(input);
-	}
+	}*/
 	
-	private void printToken() {
-		for (index = 0; index < indentation; index ++) {
-			writer.format(" ");
-			System.out.print(" ");
-		}
+/*	private void printToken() {
+
 		writer.format("<%s> %s </%s>\n", tokenizer.getTokenLabel(), tokenizer.getToken(), tokenizer.getTokenLabel());
 		System.out.print(String.format("<%s> %s </%s>\n", tokenizer.getTokenLabel(), tokenizer.getToken(), tokenizer.getTokenLabel()));
-	}
+	}*/
 	
 	//advances the token offered by the tokenizer, and updates associated variables
 	private void advance() {

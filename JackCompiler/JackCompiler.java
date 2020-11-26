@@ -21,7 +21,7 @@ public class JackCompiler{
         else System.out.println(classTable.get("patron").getClass().getName());
         
         //checks for the correct number of arguments
-        if (args.length != 1){
+        if (args.length != 1) {
             System.out.println (String.format("Invalid number of arguments passed: %d.\nPlease pass 1 argument, "
             		+ "which is input xxx.jack for output xxx.jack, or a directory containing jack files", args.length));
             return;
