@@ -32,6 +32,7 @@ public class CompilationEngine {
     String className;
     String currentSubroutineVarType;
 	String currentSubroutineVarName;
+	String currentSubroutineReturnType;
 	int currentSubroutineArgs, currentSubroutineVars;
     	
 	//constructor
@@ -125,7 +126,7 @@ public class CompilationEngine {
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
 		
 		//process a void, or int/char/boolean/className returning type for the subroutine
-		String currentSubroutineReturnType = current;
+		currentSubroutineReturnType = current;
 		if ((tokenType == KEYWORD) && (keyword == VOID))
 			eatKeyword(VOID);
 		else
@@ -295,22 +296,31 @@ public class CompilationEngine {
 	}	
 	
 	private void compileDoStatement() {
-		
+		int nArgs;//to keep track of the number of arguments
 		eatKeyword(DO);
-		//Subroutine Call
-		eatIdentifier();
-		if ( (tokenType == SYMBOL) && ((symbol == '(') || (symbol == '.')) ) {
+	
+		String classOrSubroutineName = current; //the following identifier will be assumed to be a class name if followed by a dot, 
+		eatIdentifier();						//else will be treated as a subroutine name 
+
+		if ( (tokenType == SYMBOL) && ((symbol == '(') || (symbol == '.')) ) {//check for correct syntax
 			if (symbol == '(') {
 				eatSymbol('(');
-				compileExpressionList();
+				nArgs = compileExpressionList(); //compileExpressionList returns the number of expressions in the list, which will become nArgs here
 				eatSymbol(')');
+				
+				writer.format("call %s %d\n", classOrSubroutineName, nArgs);
 			}
 			else {
 				eatSymbol('.');
+				
+				String subroutineName = current;
 				eatIdentifier();
+				
 				eatSymbol('(');
-				compileExpressionList();
+				nArgs = compileExpressionList();
 				eatSymbol(')');
+				
+				writer.format("call %s.%s %d\n", classOrSubroutineName, subroutineName, nArgs);
 			}
 		}
 		else {
@@ -325,9 +335,32 @@ public class CompilationEngine {
 	private void compileReturnStatement() {
 
 		eatKeyword(RETURN);
-		if (isExpression())
-			compileExpression();
+		if (currentSubroutineReturnType == "void") {
+			if (isExpression()) {
+				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, return value "
+						+ "specified despite subroutine returning void", inputFileName, tokenizer.getLine()));
+				System.exit(0);
+			}
+			else {
+				writer.print("push constant 0\n"
+						   + "return\n"
+						   + "pop temp 0\n");
+			}	
+		}
+		else {
+			if (isExpression()) {
+				compileExpression();
+				writer.print("return\n");
+			}
+			else {
+				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, no return value "
+						+ "specified for a non-void subroutine", inputFileName, tokenizer.getLine()));
+				System.exit(0);
+			}
+		}
+		
 		eatSymbol(';');
+		
 
 	}	
 
@@ -409,16 +442,19 @@ public class CompilationEngine {
 
 	}
 	
-	private void compileExpressionList() {
-		
+	private int compileExpressionList() {
+		int noOfExpressions = 0;
 		if (isExpression()) {
 			compileExpression();
+			noOfExpressions ++;
+			
 			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 				eatSymbol(',');
 				compileExpression();
+				noOfExpressions ++;
 			}
 		}
-		
+		return noOfExpressions;
 	}	
 	
 	private boolean eatKeyword(int... correctKeywords) {
