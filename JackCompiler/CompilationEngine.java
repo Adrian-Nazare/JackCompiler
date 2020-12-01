@@ -30,6 +30,9 @@ public class CompilationEngine {
     //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
     
     String className;
+    String currentSubroutineVarType;
+	String currentSubroutineVarName;
+	int currentSubroutineArgs, currentSubroutineVars;
     	
 	//constructor
 	public CompilationEngine(File inputFile, File outputFile) {
@@ -107,7 +110,7 @@ public class CompilationEngine {
 		//while encountering commas, we keep processing the comma, together with an expected variable name
 		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
-			className = current;
+			classVarName = current;
 			eatIdentifier();
 			symbolTable.define(classVarName, classVarType, classVarKind);
 		}
@@ -117,7 +120,7 @@ public class CompilationEngine {
 	
 	private void compileSubroutineDec() {
 		symbolTable.startSubroutine();
-		
+		currentSubroutineArgs = 0; currentSubroutineVars = 0;
 		int currentSubroutineType = keyword;
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
 		
@@ -131,8 +134,10 @@ public class CompilationEngine {
 		eatIdentifier(); //process an identifier for the subroutineName
 		eatSymbol('(');
 		
-		if (currentSubroutineType == METHOD)
+		if (currentSubroutineType == METHOD) {
 			symbolTable.define("this", className, ARG);
+			currentSubroutineArgs++;
+		}
 		compileParameterList();
 		eatSymbol(')');
 		
@@ -144,15 +149,16 @@ public class CompilationEngine {
 	private void compileParameterList() {
 
 		// ? -> if we have a token corresponding to a type declaration, the method starts processing the variable declarations
-		String currentSubroutineVarType = current;
+		currentSubroutineVarType = current;
 		if (((tokenType == KEYWORD) && ((keyword == INT) || (keyword == CHAR) || (keyword == BOOLEAN))) ||
 				(tokenType == IDENTIFIER) ) {
 			eatType(); //process the type
 			
-			String currentSubroutineVarName = current;
+			currentSubroutineVarName = current;
 			eatIdentifier(); //process the variable name
 			
 			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
+			currentSubroutineArgs++;
 			
 			// * -> if we encounter a comma, it means we have multiple variables, and we keep processing them until no more commas are found
 			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
@@ -162,7 +168,9 @@ public class CompilationEngine {
 				eatType();
 				currentSubroutineVarName = current;
 				eatIdentifier();
+				
 				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
+				currentSubroutineArgs++;
 			}
 		}	
 	}	
@@ -180,13 +188,25 @@ public class CompilationEngine {
 	}	
 	
 	private void compileVarDec() {
-		
 		eatKeyword(VAR);
+		
+		currentSubroutineVarType = current;
 		eatType();
+		
+		currentSubroutineVarName = current;
 		eatIdentifier();
+		
+		symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
+		currentSubroutineVars++;
+		
 		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
+			
+			currentSubroutineVarName = current;
 			eatIdentifier();
+			
+			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
+			currentSubroutineVars++;
 		}
 		eatSymbol(';');
 		
@@ -214,16 +234,35 @@ public class CompilationEngine {
 	private void compileLetStatement() {
 		
 		eatKeyword(LET);
-		eatIdentifier();
-		if ((tokenType == SYMBOL) && (symbol == '[')) {
-			eatSymbol('[');
-			compileExpression();
-			eatSymbol(']');
-		}
-		eatSymbol('=');
-		compileExpression();
-		eatSymbol(';');
 		
+		String assignmentVariable = current; //we keep track of the variable that is to be assigned
+		eatIdentifier();
+		
+		if ((tokenType == SYMBOL) && (symbol == '[')) { //if an array assignment
+			WritePushPop("push", assignmentVariable);//we push the address of the array
+			
+			eatSymbol('[');
+			compileExpression(); //compile the expression1 in-between the brackets
+			eatSymbol(']');
+			
+			writer.format("add\n"); //we add the resulting value to the address of the array
+			
+			eatSymbol('=');
+			compileExpression(); //compile the expression2 on the right side of the equal sign
+			
+			writer.format("pop temp 0\n" //we pop the resulting value into a temporary value
+						+ "pop pointer1\n" //we pop the address of assignmentVariable[expression1] into pointer 1
+						+ "push temp 0\n" // we again push the saved value of expression 2
+						+ "pop that 0\n"); //we pop it into the RAM location that address assignmentVariable[expression1] points to
+			
+			eatSymbol(';');
+		}
+		
+		else { //if a normal variable assignment
+			eatSymbol('=');
+			compileExpression();
+			WritePushPop("pop", assignmentVariable);
+		}
 	}	
 	
 	private void compileIfStatement() {
@@ -527,6 +566,27 @@ public class CompilationEngine {
 			keyword = tokenizer.getKeyword();
 		else if (tokenType == SYMBOL)
 			symbol = tokenizer.getSymbol();
+	}
+	
+	private void WritePushPop(String pushPop, String varName) {
+		switch (symbolTable.KindOf(varName)) {
+		case STATIC:
+			writer.format("%s %s.static %d\n", pushPop, className, symbolTable.IndexOf(varName));
+			return;
+		case FIELD:
+			writer.format("%s this %d\n", pushPop, symbolTable.IndexOf(varName));
+			return;
+		case ARG:
+			writer.format("%s argument %d\n", pushPop, symbolTable.IndexOf(varName));
+			return;
+		case VAR:
+			writer.format("%s local %d\n", pushPop, symbolTable.IndexOf(varName));
+			return;
+		}
+	}
+	
+	private void WriteArithmetic(char expressionSymbol) {
+		writer.format("%s\n", arithmeticOpMap.get(expressionSymbol));
 	}
 	
 	public void close() {
