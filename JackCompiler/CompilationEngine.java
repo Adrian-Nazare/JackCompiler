@@ -30,13 +30,12 @@ public class CompilationEngine {
     //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
     
     String currentClassName;
+    
     String currentSubroutineName;
     int currentSubroutineType;
-    
     String currentSubroutineVarType;
 	String currentSubroutineVarName;
 	String currentSubroutineReturnType;
-	int currentSubroutineArgs, currentSubroutineVars;
 	int labelCounter;
     	
 	//constructor
@@ -125,26 +124,27 @@ public class CompilationEngine {
 	}
 	
 	private void compileSubroutineDec() { //WARNING: unfinished
+		
 		symbolTable.startSubroutine();
-		currentSubroutineArgs = 0; currentSubroutineVars = 0;
 		currentSubroutineType = keyword;
+		
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
 		
-		//process a void, or int/char/boolean/className returning type for the subroutine
 		currentSubroutineReturnType = current;
-		if ((tokenType == KEYWORD) && (keyword == VOID))
-			eatKeyword(VOID);
-		else
-			eatType();
+		if (currentSubroutineType == CONSTRUCTOR)
+			eatIdentifier(currentClassName);
+		else { //process a void, or int/char/boolean/className returning type for the subroutine of type method or function
+			if ((tokenType == KEYWORD) && (keyword == VOID))
+				eatKeyword(VOID);
+			else
+				eatType();
+		}
 		
 		currentSubroutineName = current;
 		eatIdentifier(); //process an identifier for the subroutineName
 		eatSymbol('(');
 		
-		if (currentSubroutineType == METHOD) {
-			symbolTable.define("this", currentClassName, ARG);
-			currentSubroutineArgs++;
-		}
+		
 		compileParameterList();
 		eatSymbol(')');
 		
@@ -154,9 +154,13 @@ public class CompilationEngine {
 	}	
 	
 	private void compileParameterList() {
-
+		
+		//if we have a method subroutine, we add an argument 0 which will be the base address of the object we are working on
+		if (currentSubroutineType == METHOD) 
+			symbolTable.define("this", currentClassName, ARG);
 		// ? -> if we have a token corresponding to a type declaration, the method starts processing the variable declarations
 		currentSubroutineVarType = current;
+		
 		if (((tokenType == KEYWORD) && ((keyword == INT) || (keyword == CHAR) || (keyword == BOOLEAN))) ||
 				(tokenType == IDENTIFIER) ) {
 			eatType(); //process the type
@@ -165,7 +169,6 @@ public class CompilationEngine {
 			eatIdentifier(); //process the variable name
 			
 			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
-			currentSubroutineArgs++;
 			
 			// * -> if we encounter a comma, it means we have multiple variables, and we keep processing them until no more commas are found
 			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
@@ -177,17 +180,30 @@ public class CompilationEngine {
 				eatIdentifier();
 				
 				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
-				currentSubroutineArgs++;
 			}
 		}	
+	
 	}	
 	
 	private void compileSubroutineBody() {
-		
 		eatSymbol('{');
+	/*	if (currentSubroutineType == CONSTRUCTOR)
+			symbolTable.define("this, currentSubroutineVarType, VAR);*/
 		while ((tokenType == KEYWORD) && (keyword == VAR)) {
 			compileVarDec();
-		}		
+		}
+		//after declaring (and counting) all the local arguments, and before compiling the statements, 
+		//we need to declare that a function needing that many nVars will follow
+		writer.format("function %s.%s %d\n", currentClassName, currentSubroutineName, symbolTable.VarCount(VAR));
+		
+		if (currentSubroutineType == METHOD) //when compiling a method subroutine, we need to make sure that argument 0, which will be the base 
+			writer.print("push argument 0\n" //address of the object will have been popped as pointer 0 in order to access the object fields
+					   + "pop pointer 0\n");							     
+		else if (currentSubroutineType == CONSTRUCTOR)
+			writer.format("push constant %d\n"     //push the number of field variables that we need to allocate memory to 
+						+ "call Memory.alloc 1\n"  //Memory.alloc will allocate memory to that many 16-bit words, and return the address of the to-be object
+						+ "pop pointer 0\n",       //we pop that address into pointer 0, as the constructor function starts manipulating the object's fields
+						symbolTable.VarCount(FIELD));
 		compileStatements();
 		eatSymbol('}');
 		
@@ -204,7 +220,6 @@ public class CompilationEngine {
 		eatIdentifier();
 		
 		symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
-		currentSubroutineVars++;
 		
 		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
@@ -213,11 +228,8 @@ public class CompilationEngine {
 			eatIdentifier();
 			
 			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
-			currentSubroutineVars++;
 		}
 		eatSymbol(';');
-		
-		
 	}	
 	
 	private void compileStatements() {
@@ -395,6 +407,12 @@ public class CompilationEngine {
 	private void compileReturnStatement() {
 
 		eatKeyword(RETURN);
+		
+		if (currentSubroutineType == CONSTRUCTOR) { //if we have a constructor, then it MUST return "this", the address of the new object
+			eatKeyword(THIS);
+			return;
+		}
+		
 		if (currentSubroutineReturnType == "void") {
 			if (isExpression()) {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, return value "
@@ -483,9 +501,9 @@ public class CompilationEngine {
 				compileExpression();
 				eatSymbol(']');
 				
-				writer.print("add\n"
-						   + "pop pointer 1\n"
-						   + "push that 0");
+				writer.print("add\n" //the value of the compiled expression is added to the value of the variable's base address
+						   + "pop pointer 1\n" //it is then popped into the THAT segment
+						   + "push that 0"); //the value of the array at the [expression] index is then pushed onto the stack
 			}
 			//if it is a subroutine call from the current class, followed by parentheses:
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
@@ -500,8 +518,8 @@ public class CompilationEngine {
 			}
 			//if it is a subroutine from another class, OR a subroutine called on another object
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
+				
 				if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name
-					
 					String className = current;
 					eatIdentifier();
 					eatSymbol('.');
@@ -520,6 +538,8 @@ public class CompilationEngine {
 					String className = symbolTable.TypeOf(current);
 					
 					WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
+					writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
+					
 					eatIdentifier();
 					eatSymbol('.');
 					
@@ -723,6 +743,7 @@ public class CompilationEngine {
 	}
 	
 	private void WritePushPop(String pushPop, String varName) {
+		
 		switch (symbolTable.KindOf(varName)) {
 		case STATIC:
 			writer.format("%s %s.static %d\n", pushPop, currentClassName, symbolTable.IndexOf(varName));
@@ -736,6 +757,12 @@ public class CompilationEngine {
 		case VAR:
 			writer.format("%s local %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
+		default:
+			if (varName == "this")
+				writer.format("%s pointer 0\n", pushPop);
+			else
+				System.out.println(String.format("Error in file \"%s\" at line %d, varName %s not found in class/subroutine declaration", 
+						inputFileName, tokenizer.getLine(), varName));
 		}
 	}
 	
