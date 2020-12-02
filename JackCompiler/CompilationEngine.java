@@ -30,10 +30,14 @@ public class CompilationEngine {
     //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
     
     String currentClassName;
+    String currentSubroutineName;
+    int currentSubroutineType;
+    
     String currentSubroutineVarType;
 	String currentSubroutineVarName;
 	String currentSubroutineReturnType;
 	int currentSubroutineArgs, currentSubroutineVars;
+	int labelCounter;
     	
 	//constructor
 	public CompilationEngine(File inputFile, File outputFile) {
@@ -52,6 +56,7 @@ public class CompilationEngine {
     							  '<', "lt", 
     							  '&', "and",
     							  '|', "or");
+    		labelCounter = 0;
     		current = tokenizer.getToken();
     		tokenType = tokenizer.getTokenType();
     		if (tokenType == KEYWORD)
@@ -122,7 +127,7 @@ public class CompilationEngine {
 	private void compileSubroutineDec() { //WARNING: unfinished
 		symbolTable.startSubroutine();
 		currentSubroutineArgs = 0; currentSubroutineVars = 0;
-		int currentSubroutineType = keyword;
+		currentSubroutineType = keyword;
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
 		
 		//process a void, or int/char/boolean/className returning type for the subroutine
@@ -132,6 +137,7 @@ public class CompilationEngine {
 		else
 			eatType();
 		
+		currentSubroutineName = current;
 		eatIdentifier(); //process an identifier for the subroutineName
 		eatSymbol('(');
 		
@@ -272,27 +278,50 @@ public class CompilationEngine {
 		eatSymbol('(');
 		compileExpression();
 		eatSymbol(')');
+		
+		writer.print("not\n");
+		writer.format("if-goto IF%d:L1\n", labelCounter);
+		
 		eatSymbol('{');
 		compileStatements();
-		eatSymbol('}');
+		eatSymbol('}');		
+		
 		if ((tokenType == KEYWORD) && (keyword == ELSE)) {
+			writer.format("goto IF%d:L2\n", labelCounter);
+			writer.format("label IF%d:L1\n", labelCounter);
+			
 			eatKeyword(ELSE);
 			eatSymbol('{');
 			compileStatements();
 			eatSymbol('}');
-		}		
+			
+			writer.format("label IF%d:L2\n", labelCounter);
+		}
+		else
+			writer.format("label IF%d:L1\n", labelCounter);
+		
+		labelCounter++;
 	}	
 	
 	private void compileWhileStatement() {
-		
 		eatKeyword(WHILE);
+		writer.format("label WHILE%d:L1\n", labelCounter);
+		
 		eatSymbol('(');
 		compileExpression();
 		eatSymbol(')');
+		
+		writer.print("not\n");
+		writer.format("if-goto WHILE%d:L2\n", labelCounter);
+		
 		eatSymbol('{');
 		compileStatements();
 		eatSymbol('}');
-
+		
+		writer.format("goto WHILE%d:L1\n", labelCounter);
+		writer.format("label WHILE%d:L2\n", labelCounter);
+		
+		labelCounter++;
 	}	
 	
 	private void compileDoStatement() {
