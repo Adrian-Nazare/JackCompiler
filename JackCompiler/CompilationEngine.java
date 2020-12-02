@@ -29,7 +29,7 @@ public class CompilationEngine {
     char symbol; //the char value of the symbol, it token is of symbol type
     //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
     
-    String className;
+    String currentClassName;
     String currentSubroutineVarType;
 	String currentSubroutineVarName;
 	String currentSubroutineReturnType;
@@ -46,7 +46,7 @@ public class CompilationEngine {
     		arithmeticOpMap = Map.of('+', "add", 
     							  '-', "sub",
     							  '*', "call Math.multiply 2",
-    							  '/', "call Math.divide 2,",
+    							  '/', "call Math.divide 2",
     							  '=', "eq",
     							  '>', "gt", 
     							  '<', "lt", 
@@ -79,8 +79,8 @@ public class CompilationEngine {
 		symbolTable.startClass();
 		
 		eatKeyword(CLASS); //we check for the 'class' keyword
-		className = inputFileName.substring(0, inputFileName.lastIndexOf(".vm"));
-		eatIdentifier(className); //we check for and process an identifier for className
+		currentClassName = inputFileName.substring(0, inputFileName.lastIndexOf(".vm"));
+		eatIdentifier(currentClassName); //we check for and process an identifier for className
 		eatSymbol('{');	//we check for and process the opening curly bracket
 		
 		//as long as we keep encountering 'static' or 'field', it means that we have a class variable declaration, and we keep invoking compileClassVarDec
@@ -119,7 +119,7 @@ public class CompilationEngine {
 		eatSymbol(';');
 	}
 	
-	private void compileSubroutineDec() {
+	private void compileSubroutineDec() { //WARNING: unfinished
 		symbolTable.startSubroutine();
 		currentSubroutineArgs = 0; currentSubroutineVars = 0;
 		int currentSubroutineType = keyword;
@@ -136,7 +136,7 @@ public class CompilationEngine {
 		eatSymbol('(');
 		
 		if (currentSubroutineType == METHOD) {
-			symbolTable.define("this", className, ARG);
+			symbolTable.define("this", currentClassName, ARG);
 			currentSubroutineArgs++;
 		}
 		compileParameterList();
@@ -251,7 +251,7 @@ public class CompilationEngine {
 			eatSymbol('=');
 			compileExpression(); //compile the expression2 on the right side of the equal sign
 			
-			writer.format("pop temp 0\n" //we pop the resulting value into a temporary value
+			writer.format("pop temp 0\n" //we pop the resulting value into a temporary value, in case expression 2 used an array
 						+ "pop pointer1\n" //we pop the address of assignmentVariable[expression1] into pointer 1
 						+ "push temp 0\n" // we again push the saved value of expression 2
 						+ "pop that 0\n"); //we pop it into the RAM location that address assignmentVariable[expression1] points to
@@ -296,40 +296,71 @@ public class CompilationEngine {
 	}	
 	
 	private void compileDoStatement() {
-		int nArgs;//to keep track of the number of arguments
-		eatKeyword(DO);
-	
-		String classOrSubroutineName = current; //the following identifier will be assumed to be a class name if followed by a dot, 
-		eatIdentifier();						//else will be treated as a subroutine name 
-
-		if ( (tokenType == SYMBOL) && ((symbol == '(') || (symbol == '.')) ) {//check for correct syntax
-			if (symbol == '(') {
-				eatSymbol('(');
-				nArgs = compileExpressionList(); //compileExpressionList returns the number of expressions in the list, which will become nArgs here
-				eatSymbol(')');
-				
-				writer.format("call %s %d\n", classOrSubroutineName, nArgs);
-			}
-			else {
-				eatSymbol('.');
-				
-				String subroutineName = current;
-				eatIdentifier();
-				
-				eatSymbol('(');
-				nArgs = compileExpressionList();
-				eatSymbol(')');
-				
-				writer.format("call %s.%s %d\n", classOrSubroutineName, subroutineName, nArgs);
-			}
-		}
-		else {
-			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected symbol "
-					+ "of type ( or . following subroutine call", inputFileName, tokenizer.getLine()));
-			System.exit(0);
-		}
+		compileSubroutineCall();		
+		writer.print("pop temp 0\n"); //we discard the return value of the function in the case of a DO statement
 		eatSymbol(';');
 		
+	}
+	
+	private void compileSubroutineCall() { //WARNING UNFINISHED
+		/*
+		eatKeyword(DO);
+		int nArgs;//to keep track of the number of arguments
+
+		String className;
+		String subroutineName;
+		if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') )
+		
+
+		if (symbolTable.KindOf(current) != NONE) { //if the current identifier is a variable
+			WritePushPop("push", current); //we push variable's address as the first argument of the method
+			nArgs++;
+			
+			className = symbolTable.TypeOf(current);
+			
+			eatSymbol('.');
+			
+			subroutineName = current;//the next identifier would be the method's name
+			eatIdentifier();
+			
+			eatSymbol('(');
+			nArgs = compileExpressionList(); //compileExpressionList returns the number of expressions in the list, which will become nArgs here
+			eatSymbol(')');
+			
+			writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
+		}
+		else { //if the current identifier is not a variable, it must be either a class name or a subroutine name;
+			className = current; // we assume for now that the class name is the name of our class, and save it here
+			eatIdentifier();
+			
+			if ( (tokenType == SYMBOL) && ((symbol == '(') || (symbol == '.')) ) {//check for correct syntax
+				if (symbol == '(') {
+					eatSymbol('(');
+					nArgs = compileExpressionList(); 
+					eatSymbol(')');
+					
+					writer.format("call %s.%s %d\n", currentClassName, classOrSubroutineName, nArgs);
+				}
+				else {
+					eatSymbol('.');
+					
+					subroutineName = current;
+					eatIdentifier();
+					
+					eatSymbol('(');
+					nArgs = compileExpressionList();
+					eatSymbol(')');
+					
+					writer.format("call %s.%s %d\n", classOrSubroutineName, subroutineName, nArgs);
+				}
+			}
+			else {
+				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected symbol "
+						+ "of type ( or . following subroutine call", inputFileName, tokenizer.getLine()));
+				System.exit(0);
+			}
+			
+		}*/
 	}
 	
 	private void compileReturnStatement() {
@@ -343,8 +374,7 @@ public class CompilationEngine {
 			}
 			else {
 				writer.print("push constant 0\n"
-						   + "return\n"
-						   + "pop temp 0\n");
+						   + "return\n");
 			}	
 		}
 		else {
@@ -368,28 +398,46 @@ public class CompilationEngine {
 		
 		compileTerm();
 		while ((tokenType == SYMBOL) && contains(op, symbol) ) {
+			char currentSymbol = symbol;
+			
 			eatSymbol(symbol);
 			compileTerm();
+			
+			WriteArithmetic(currentSymbol);
 		}
 		
 	}	
 	
 	private void compileTerm() {
 		
-		if (tokenType == INT_CONST)
+		if (tokenType == INT_CONST) {
+			String currentInt = current;
 			eatIntegerConstant();
-		else if (tokenType == STRING_CONST)
+			writer.format("push constant %s\n", currentInt);
+		}
+		else if (tokenType == STRING_CONST) {
+			writer.format("call String.new %d\n", current.length());
+			for (char c: current.toCharArray()) {
+				writer.format("call String.appendChar %d\n", c);
+			}
 			eatStringConstant();
+		}
+			
 		//if it is a keyword constant:
 		else if (tokenType == KEYWORD) {
-			if (keyword == TRUE)
+			if (keyword == TRUE) {
+				writer.print("push constant 0\n"
+						   + "neg\n");
 				eatKeyword(TRUE);
-			else if (keyword == FALSE) 
-				eatKeyword(FALSE);
-			else if (keyword == NULL)
-				eatKeyword(NULL);
-			else if (keyword == THIS)
+			}
+			else if ((keyword == FALSE) || (keyword == NULL)) {
+				writer.print("push constant 0\n");
+				eatKeyword(FALSE, NULL);
+			}
+			else if (keyword == THIS) {
+				writer.print("push this 0\n");
 				eatKeyword(THIS);
+			}
 			else {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, for term declaration "
 						+ "as symbol: expected 'true', 'false', 'null' or 'this'", inputFileName, tokenizer.getLine()));
@@ -399,30 +447,67 @@ public class CompilationEngine {
 		else if (tokenType == IDENTIFIER) {
 			//if it is a variable array declaration:
 			if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '[') ) {
+				WritePushPop("push", current);
 				eatIdentifier();
+				
 				eatSymbol('[');
 				compileExpression();
 				eatSymbol(']');
+				
+				writer.print("add\n"
+						   + "pop pointer 1\n"
+						   + "push that 0");
 			}
-			//if it is a subroutine call followed by parenthesis:
+			//if it is a subroutine call from the current class, followed by parentheses:
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
+				String subroutineName = current;
 				eatIdentifier();
+				
 				eatSymbol('(');
-				compileExpressionList();
+				int nArgs = compileExpressionList();
 				eatSymbol(')');
+				
+				writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs);
 			}
-			//if it is a subroutine from another class:
+			//if it is a subroutine from another class, OR a subroutine called on another object
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
-				eatIdentifier();
-				eatSymbol('.');
-				eatIdentifier();
-				eatSymbol('(');
-				compileExpressionList();
-				eatSymbol(')');
+				if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name
+					
+					String className = current;
+					eatIdentifier();
+					eatSymbol('.');
+					
+					String subroutineName = current;
+					eatIdentifier();
+					eatSymbol('(');
+					int nArgs  = compileExpressionList();
+					eatSymbol(')');
+					
+					writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
+				}
+				
+				else { // the identifier is recognised as a variable name
+					String varName = current;
+					String className = symbolTable.TypeOf(current);
+					
+					WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
+					eatIdentifier();
+					eatSymbol('.');
+					
+					String subroutineName = current;
+					eatIdentifier();
+					eatSymbol('(');
+					int nArgs  = compileExpressionList();
+					eatSymbol(')');
+					
+					writer.format("call %s.%s %d\n", className, subroutineName, nArgs + 1);
+				}
 			}
 			//if it was just a variable:
-			else
+			else {
+				WritePushPop("push", current);
 				eatIdentifier();
+			}
 		}
 		//if it is another expression:
 		else if ((tokenType == SYMBOL) && (symbol == '(')) {
@@ -432,6 +517,10 @@ public class CompilationEngine {
 		}
 		//if it is a unaryOp term:
 		else if ((tokenType == SYMBOL) && ((symbol == '-') || (symbol == '~')) ) {
+			if (symbol == '-')
+				writer.print("neg\n");
+			else 
+				writer.print("not\n");
 			eatSymbol(symbol);
 			compileTerm();
 		}
@@ -607,7 +696,7 @@ public class CompilationEngine {
 	private void WritePushPop(String pushPop, String varName) {
 		switch (symbolTable.KindOf(varName)) {
 		case STATIC:
-			writer.format("%s %s.static %d\n", pushPop, className, symbolTable.IndexOf(varName));
+			writer.format("%s %s.static %d\n", pushPop, currentClassName, symbolTable.IndexOf(varName));
 			return;
 		case FIELD:
 			writer.format("%s this %d\n", pushPop, symbolTable.IndexOf(varName));
