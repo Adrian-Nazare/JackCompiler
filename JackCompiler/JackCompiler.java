@@ -16,9 +16,9 @@ public class JackCompiler{
         System.out.println(classTable.get("george").get(0).getClass().getName());
         System.out.println(classTable.get("george").get(1).getClass().getName());
         
-        if (classTable.get("patron") == null)
+        /*if (classTable.get("patron") == null)
         	System.out.println("Caught it!");
-        else System.out.println(classTable.get("patron").getClass().getName());
+        else System.out.println(classTable.get("patron").getClass().getName());*/
         
         //checks for the correct number of arguments
         if (args.length != 1) {

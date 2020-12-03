@@ -337,73 +337,68 @@ public class CompilationEngine {
 	}	
 	
 	private void compileDoStatement() {
-		compileSubroutineCall();		
+		eatKeyword(DO);
+		compileSubroutineCall();
+		
 		writer.print("pop temp 0\n"); //we discard the return value of the function in the case of a DO statement
 		eatSymbol(';');
 		
 	}
 	
-	private void compileSubroutineCall() { //WARNING UNFINISHED
-		/*
-		eatKeyword(DO);
-		int nArgs;//to keep track of the number of arguments
-
-		String className;
-		String subroutineName;
-		if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') )
-		
-
-		if (symbolTable.KindOf(current) != NONE) { //if the current identifier is a variable
-			WritePushPop("push", current); //we push variable's address as the first argument of the method
-			nArgs++;
-			
-			className = symbolTable.TypeOf(current);
-			
-			eatSymbol('.');
-			
-			subroutineName = current;//the next identifier would be the method's name
-			eatIdentifier();
-			
-			eatSymbol('(');
-			nArgs = compileExpressionList(); //compileExpressionList returns the number of expressions in the list, which will become nArgs here
-			eatSymbol(')');
-			
-			writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
-		}
-		else { //if the current identifier is not a variable, it must be either a class name or a subroutine name;
-			className = current; // we assume for now that the class name is the name of our class, and save it here
-			eatIdentifier();
-			
-			if ( (tokenType == SYMBOL) && ((symbol == '(') || (symbol == '.')) ) {//check for correct syntax
-				if (symbol == '(') {
-					eatSymbol('(');
-					nArgs = compileExpressionList(); 
-					eatSymbol(')');
-					
-					writer.format("call %s.%s %d\n", currentClassName, classOrSubroutineName, nArgs);
-				}
-				else {
-					eatSymbol('.');
-					
-					subroutineName = current;
+	private void compileSubroutineCall() {
+		//if it is a subroutine call from the current class, followed by parentheses:
+				if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
+					String subroutineName = current;
 					eatIdentifier();
 					
 					eatSymbol('(');
-					nArgs = compileExpressionList();
+					int nArgs = compileExpressionList();
 					eatSymbol(')');
 					
-					writer.format("call %s.%s %d\n", classOrSubroutineName, subroutineName, nArgs);
+					writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs);
 				}
-			}
-			else {
-				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected symbol "
-						+ "of type ( or . following subroutine call", inputFileName, tokenizer.getLine()));
-				System.exit(0);
-			}
-			
-		}*/
+				//if it is a subroutine from another class, OR a subroutine called on another object
+				else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
+					
+					if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name
+						String className = current;
+						eatIdentifier();
+						eatSymbol('.');
+						
+						String subroutineName = current;
+						eatIdentifier();
+						eatSymbol('(');
+						int nArgs  = compileExpressionList();
+						eatSymbol(')');
+						
+						writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
+					}
+					
+					else { // the identifier is recognised as a variable name, therefore this is a method acting upon that [variable name] object
+						String varName = current;
+						String className = symbolTable.TypeOf(current);
+						
+						WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
+						writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
+						
+						eatIdentifier();
+						eatSymbol('.');
+						
+						String subroutineName = current;
+						eatIdentifier();
+						eatSymbol('(');
+						int nArgs  = compileExpressionList();
+						eatSymbol(')');
+						
+						writer.format("call %s.%s %d\n", className, subroutineName, nArgs + 1);
+					}
+				}
+				else {
+					System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect subroutineCall declaration "
+							, inputFileName, tokenizer.getLine()));
+					System.exit(0);
+				}
 	}
-	
 	private void compileReturnStatement() {
 
 		eatKeyword(RETURN);
@@ -505,53 +500,9 @@ public class CompilationEngine {
 						   + "pop pointer 1\n" //it is then popped into the THAT segment
 						   + "push that 0"); //the value of the array at the [expression] index is then pushed onto the stack
 			}
-			//if it is a subroutine call from the current class, followed by parentheses:
-			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
-				String subroutineName = current;
-				eatIdentifier();
-				
-				eatSymbol('(');
-				int nArgs = compileExpressionList();
-				eatSymbol(')');
-				
-				writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs);
-			}
-			//if it is a subroutine from another class, OR a subroutine called on another object
-			else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
-				
-				if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name
-					String className = current;
-					eatIdentifier();
-					eatSymbol('.');
-					
-					String subroutineName = current;
-					eatIdentifier();
-					eatSymbol('(');
-					int nArgs  = compileExpressionList();
-					eatSymbol(')');
-					
-					writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
-				}
-				
-				else { // the identifier is recognised as a variable name
-					String varName = current;
-					String className = symbolTable.TypeOf(current);
-					
-					WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
-					writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
-					
-					eatIdentifier();
-					eatSymbol('.');
-					
-					String subroutineName = current;
-					eatIdentifier();
-					eatSymbol('(');
-					int nArgs  = compileExpressionList();
-					eatSymbol(')');
-					
-					writer.format("call %s.%s %d\n", className, subroutineName, nArgs + 1);
-				}
-			}
+			//if it is a subroutinecall:
+			else if ( (tokenizer.getToken2Type() == SYMBOL) && ((tokenizer.getToken2().charAt(0) == '(') || (tokenizer.getToken2().charAt(0) == '.')) )
+				compileSubroutineCall();
 			//if it was just a variable:
 			else {
 				WritePushPop("push", current);
