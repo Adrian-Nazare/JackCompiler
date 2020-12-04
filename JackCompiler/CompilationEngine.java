@@ -12,12 +12,15 @@ public class CompilationEngine {
     		  VAR=11, INT=12, CHAR=13, BOOLEAN=14, VOID=15, TRUE=16, FALSE=17, 
     		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25,
     		  NONE=26, ARG=27;
-    char[] op = {'+', '-', '*', '/', '&', '|', '<', '>', '='};
+    
+    char[] op = {'+', '-', '*', '/', '&', '|', '<', '>', '='}; //a list of all the symbols to make searching through them easier
+    Map<Character, String> arithmeticOpMap; //a hash map to correlate a symbol directly with an arithmetic/logical operation
     
 	Tokenizer tokenizer;
     PrintWriter writer;
     SymbolTable symbolTable;
-    Map<Character, String> arithmeticOpMap;
+    
+   
     
     String inputFileName;
     int tokenNumber;
@@ -27,18 +30,20 @@ public class CompilationEngine {
     
     int keyword; // the numeric code for the keyword, if token is of keyword type
     char symbol; //the char value of the symbol, it token is of symbol type
-    //we do not use 'identifier' and 'stringVal' variables, as they are already handled by current
+    //we do not use 'identifier' and 'stringVal' String variables, as they are already handled by current
     
-    String currentClassName;
+    String currentClassName; //keeps track of the current class that we are compiling
     
-    String currentSubroutineName;
-    int currentSubroutineType;
-    String currentSubroutineVarType;
-	String currentSubroutineVarName;
-	String currentSubroutineReturnType;
-	int ifLabelCounter, whileLabelCounter;
+    String currentSubroutineName; //keeps track of the name of the current subroutine that we are compiling
+    int currentSubroutineType; //keeps track of the current subroutine's type (constructor, method, function)
+	String currentSubroutineReturnType; //keeps track of the current subroutine's return type (void, int, char, boolean, className)
+    
+	String currentSubroutineVarName; //the name of the current subroutine local variable
+	String currentSubroutineVarType; //the type of the current subroutine local variable
+
+	int ifLabelCounter, whileLabelCounter; //label counters to insure unique labels for if and while statements
     	
-	//constructor
+	/*constructor*/
 	public CompilationEngine(File inputFile, File outputFile) {
         try {
             writer = new PrintWriter(outputFile);    
@@ -66,25 +71,26 @@ public class CompilationEngine {
     			writer.close();
     			System.exit(0);
     		}   		
-    		
         } catch (IOException e) { e.printStackTrace(); }
 	}
 	
-	/* The main CompilationEngine method */
+	/* The main CompilationEngine method  */
 	public void run() {
 		while (tokenizer.hasMoreCommands()) { //checking if there is a valid current command
-			//we always start with compiling the class, which handles the syntax analysis and calls other methods to handle, it as needed
+			//we always start with compiling the class, which handles the syntax analysis and calls other methods to handle it as needed
 			compileClass();
         }
 		tokenizer.close();
 	}
 	
+	/*starts compiling a new class*/
 	private void compileClass() {
-		symbolTable.startClass();
+		symbolTable.startClass(); //starts a new class symbolTable for keeping track of the variables' type, kind and number
 		
 		eatKeyword(CLASS); //we check for the 'class' keyword
 		currentClassName = inputFileName.substring(0, inputFileName.lastIndexOf(".jack"));
-		eatIdentifier(currentClassName); //we check for and process an identifier for className
+		//we check for and process an identifier for className, making sure it's the the same as the fileName
+		eatIdentifier(currentClassName); 
 		eatSymbol('{');	//we check for and process the opening curly bracket
 		
 		//as long as we keep encountering 'static' or 'field', it means that we have a class variable declaration, and we keep invoking compileClassVarDec
@@ -101,9 +107,10 @@ public class CompilationEngine {
 
 	}
 	
+	/* compiles the variable declarations of the current class and populates the class symbol table*/
 	private void compileClassVarDec() {
 		int classVarKind = keyword;
-		eatKeyword(STATIC, FIELD);
+		eatKeyword(STATIC, FIELD); //a variable must either be of kind static or field
 
 		String classVarType = current;
 		eatType();
@@ -119,23 +126,26 @@ public class CompilationEngine {
 			eatIdentifier();
 			symbolTable.define(classVarName, classVarType, classVarKind);
 		}
-		
 		eatSymbol(';');
 	}
 	
-	private void compileSubroutineDec() { //WARNING: unfinished
-		
-		symbolTable.startSubroutine();
+	/* handles the declaration of a new subroutine*/
+	private void compileSubroutineDec() { 
+		symbolTable.startSubroutine(); //starts a new subroutine symbolTable
+		//for readability, we reinitialise the counters to 0 each time we start a new subroutine, 
+		//because the VM translator will still ensure a unique label using the class + subroutine name combination
 		ifLabelCounter = 0;
 		whileLabelCounter = 0;
-		currentSubroutineType = keyword;
 		
-		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
-		
+		currentSubroutineType = keyword; //keeps track if the subroutine is a constructor, function or method
+		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine, making sure it's one of those 3
+
 		currentSubroutineReturnType = current;
+		//if the subroutine is a constructor, we make sure that its return type is the current class name
 		if (currentSubroutineType == CONSTRUCTOR)
 			eatIdentifier(currentClassName);
-		else { //process a void, or int/char/boolean/className returning type for the subroutine of type method or function
+		//if not, it can be of type void, or int/char/boolean/className returning type (for the subroutine of type method or function)
+		else { 
 			if ((tokenType == KEYWORD) && (keyword == VOID))
 				eatKeyword(VOID);
 			else
@@ -144,35 +154,34 @@ public class CompilationEngine {
 		
 		currentSubroutineName = current;
 		eatIdentifier(); //process an identifier for the subroutineName
+		
 		eatSymbol('(');
-		
-		
-		compileParameterList();
+		compileParameterList(); //compile the list of parameters/argument variables
 		eatSymbol(')');
-		
 		
 		compileSubroutineBody();	
 
 	}	
 	
 	private void compileParameterList() {
-		
-		//if we have a method subroutine, we add an argument 0 which will be the base address of the object we are working on
+		//if we have a subroutine of type method, we add an argument 0 which will later become the base address of the object 
+		//we are working on, after the caller pushes that address first before the other arguments, and then calling this method
 		if (currentSubroutineType == METHOD) 
 			symbolTable.define("this", currentClassName, ARG);
-		// ? -> if we have a token corresponding to a type declaration, the method starts processing the variable declarations
-		currentSubroutineVarType = current;
 		
+		currentSubroutineVarType = current;
+		//if the return type is a keyword, make sure that is of type int, char or boolean
 		if (((tokenType == KEYWORD) && ((keyword == INT) || (keyword == CHAR) || (keyword == BOOLEAN))) ||
-				(tokenType == IDENTIFIER) ) {
+				(tokenType == IDENTIFIER) ) { //otherwise it is assumed to be a className type
 			eatType(); //process the type
 			
 			currentSubroutineVarName = current;
 			eatIdentifier(); //process the variable name
 			
+			//before moving on to other arguments/parameters, we define it in the subroutine's symbolTable
 			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
 			
-			// * -> if we encounter a comma, it means we have multiple variables, and we keep processing them until no more commas are found
+			//if we encounter a comma, it means we have multiple variables of that t, and we keep processing them until no more commas are found
 			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 				eatSymbol(',');
 				
@@ -184,34 +193,36 @@ public class CompilationEngine {
 				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
 			}
 		}	
-	
 	}	
 	
 	private void compileSubroutineBody() {
 		eatSymbol('{');
-	/*	if (currentSubroutineType == CONSTRUCTOR)
-			symbolTable.define("this, currentSubroutineVarType, VAR);*/
+		//if we encounter a var keyword, it means we have more local variables, and we keep processing them
 		while ((tokenType == KEYWORD) && (keyword == VAR)) {
 			compileVarDec();
 		}
-		//after declaring (and counting) all the local arguments, and before compiling the statements, 
-		//we need to declare that a function needing that many nVars will follow
+		//after declaring (and counting in the symbolTable) all the local arguments, and before compiling the statements, 
+		//we need to declare in VM code that a function needing that many nVars will follow
 		writer.format("function %s.%s %d\n", currentClassName, currentSubroutineName, symbolTable.VarCount(VAR));
 		
-		if (currentSubroutineType == METHOD) //when compiling a method subroutine, we need to make sure that argument 0, which will be the base 
-			writer.print("push argument 0\n" //address of the object will have been popped as pointer 0 in order to access the object fields
-					   + "pop pointer 0\n");							     
+		//when compiling a *method* subroutine:		
+		if (currentSubroutineType == METHOD)
+			//we need to make sure that argument 0, which will be the base address of the object, will have been pushed, 
+			//then popped as pointer 0, in order for the method to access the object's fields	
+			writer.print("push argument 0\n" 
+					   + "pop pointer 0\n");
+		//when compiling a *constructor* subroutine:		
 		else if (currentSubroutineType == CONSTRUCTOR)
 			writer.format("push constant %d\n"     //push the number of field variables that we need to allocate memory to 
 						+ "call Memory.alloc 1\n"  //Memory.alloc will allocate memory to that many 16-bit words, and return the address of the to-be object
 						+ "pop pointer 0\n",       //we pop that address into pointer 0, as the constructor function starts manipulating the object's fields
 						symbolTable.VarCount(FIELD));
-		compileStatements();
+		
+		compileStatements(); 
 		eatSymbol('}');
-		
-		
 	}	
 	
+	//compiles all the local variable declarations 
 	private void compileVarDec() {
 		eatKeyword(VAR);
 		
@@ -223,6 +234,7 @@ public class CompilationEngine {
 		
 		symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
 		
+		//similar to the class, we keep compiling the to-be local variables until no more commas are encoutnered
 		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
 			
@@ -235,9 +247,10 @@ public class CompilationEngine {
 	}	
 	
 	private void compileStatements() {
-		
-		while ((tokenType == KEYWORD) && ((keyword == LET) || (keyword == IF)
-				|| (keyword == WHILE) || (keyword == DO) || (keyword == RETURN))) {
+		//we keep compiling different statements until we stop encountering a keyword for that statement
+		while ((tokenType == KEYWORD) && 
+			   ((keyword == LET) || (keyword == IF) || (keyword == WHILE) || (keyword == DO) || (keyword == RETURN)) ) {
+
 			if (keyword == LET)
 				compileLetStatement();
 			else if (keyword == IF)
@@ -246,27 +259,27 @@ public class CompilationEngine {
 				compileWhileStatement();
 			else if (keyword == DO)
 				compileDoStatement();
-			else //the last choice: if (keyword= = RETURN)
+			else //the last choice: RETURN
 				compileReturnStatement();
 		}
-
 	}	
 	
 	private void compileLetStatement() {
-		
 		eatKeyword(LET);
 		
 		String assignmentVariable = current; //we keep track of the variable that is to be assigned
 		eatIdentifier();
 		
-		if ((tokenType == SYMBOL) && (symbol == '[')) { //if an array assignment
+		//if we have an array assignment
+		if ((tokenType == SYMBOL) && (symbol == '[')) { 
 			WritePushPop("push", assignmentVariable);//we push the address of the array
 			
 			eatSymbol('[');
 			compileExpression(); //compile the expression1 in-between the brackets
 			eatSymbol(']');
 			
-			writer.format("add\n"); //we add the resulting value to the address of the array
+			//we add the resulting value from he expression to the previously pushed address of the array
+			writer.format("add\n"); 
 			
 			eatSymbol('=');
 			compileExpression(); //compile the expression2 on the right side of the equal sign
@@ -276,8 +289,8 @@ public class CompilationEngine {
 						+ "push temp 0\n" // we again push the saved value of expression 2
 						+ "pop that 0\n"); //we pop it into the RAM location that address assignmentVariable[expression1] points to
 		}
-		
-		else { //if a normal variable assignment
+		//otherwise, we have a normal variable assignment
+		else { 
 			eatSymbol('=');
 			compileExpression();
 			WritePushPop("pop", assignmentVariable);
@@ -285,52 +298,47 @@ public class CompilationEngine {
 		eatSymbol(';');
 	}	
 	
+	//implemented the nandToTetris' compiler's labelling logic (not the the one recommended in the course) for easier VM code readability, despite adding an extra label
 	private void compileIfStatement() {
 		int thisIfLabelCounter = ifLabelCounter;
 		ifLabelCounter++;
 		
 		eatKeyword(IF);
 		eatSymbol('(');
-		compileExpression();
+		compileExpression(); //the checked expression
 		eatSymbol(')');
 		
-		//writer.print("not\n");
-		//writer.format("if-goto IF%d:L1\n", thisLabelCounter);
-		writer.format("if-goto IF_TRUE%d\n"
-					+ "goto IF_FALSE%d\n"
-					+ "label IF_TRUE%d\n", thisIfLabelCounter, thisIfLabelCounter, thisIfLabelCounter);
-		
+		writer.format("if-goto IF_TRUE%d\n" //pertains to the checked expression being TRUE - statements 1 will be run
+					+ "goto IF_FALSE%d\n" //pertains to the checked expression being FALSE - statements 2 will be run
+					+ "label IF_TRUE%d\n", thisIfLabelCounter, thisIfLabelCounter, thisIfLabelCounter); //pertains to the checked expression being TRUE,
+																										//with an else statement being either present or absent
 		eatSymbol('{');
-		compileStatements();
+		compileStatements(); //statements 1
 		eatSymbol('}');		
 		
-		
+		//different labelling logic, depending if we have an if, or an if-else statement
 		if ((tokenType == KEYWORD) && (keyword == ELSE)) {
-			writer.format("goto IF_END%d\n"
-						+ "label IF_FALSE%d\n", thisIfLabelCounter, thisIfLabelCounter);
-			//writer.format("goto IF%d:L2\n", thisLabelCounter); //L1 is FALSE
-			//writer.format("label IF%d:L1\n", thisLabelCounter); //L2 is TRUE
+			writer.format("goto IF_END%d\n" //pertains to the checked expression being TRUE, program jumps at the end and skips statements 2 
+						+ "label IF_FALSE%d\n", thisIfLabelCounter, thisIfLabelCounter); //pertains to the checked expression being FALSE in case an else statement IS present
 			
 			eatKeyword(ELSE);
 			eatSymbol('{');
-			compileStatements();
+			compileStatements(); //statements 2
 			eatSymbol('}');
 			
-			//writer.format("label IF%d:L2\n", thisLabelCounter);
-			writer.format("label IF_END%d\n", thisIfLabelCounter);
+			writer.format("label IF_END%d\n", thisIfLabelCounter); //pertains to the checked expression being TRUE
 		}
 		else
-			writer.format("label IF_FALSE%d\n", thisIfLabelCounter);
-			//writer.format("label IF%d:L1\n", thisLabelCounter);
-
+			writer.format("label IF_FALSE%d\n", thisIfLabelCounter); //pertains to the checked expression being FALSE in case NO else statement is present
 	}	
 	
+	//implemented the nandToTetris' course (and compiler) labelling logic
 	private void compileWhileStatement() {
 		int thisWhileLabelCounter = whileLabelCounter;
 		whileLabelCounter++;
 		
 		eatKeyword(WHILE);
-		writer.format("label WHILE_EXP%d\n", thisWhileLabelCounter);
+		writer.format("label WHILE_EXP%d\n", thisWhileLabelCounter); //WHILE_EXPRESSION
 		
 		eatSymbol('(');
 		compileExpression();
@@ -345,7 +353,6 @@ public class CompilationEngine {
 		
 		writer.format("goto WHILE_EXP%d\n", thisWhileLabelCounter);
 		writer.format("label  WHILE_END%d\n", thisWhileLabelCounter);
-
 	}	
 	
 	private void compileDoStatement() {
@@ -354,9 +361,9 @@ public class CompilationEngine {
 		
 		writer.print("pop temp 0\n"); //we discard the return value of the function in the case of a DO statement
 		eatSymbol(';');
-		
 	}
 	
+	/*implemented an extra private subroutine,to be used by both compileDoStatement and compileTerm in order to avoid code repetition*/
 	private void compileSubroutineCall() {
 		//if it is a subroutine call from the current class, followed by parentheses:
 				if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
@@ -367,10 +374,11 @@ public class CompilationEngine {
 					writer.format("push pointer 0\n"); 
 					
 					eatSymbol('(');
-					int nArgs = compileExpressionList();
+					int nArgs = compileExpressionList(); //compileExpressionList() also returns the number of compiled expressions, 
+														 //to keep track of how many parameters/arguments the function call will use
 					eatSymbol(')');
 					
-					//we increase nArgs by so that we account for the object's reference as the first argument
+					//we increase nArgs by one so that we account for the object's reference having been pushed as the first argument (above)
 					writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs + 1); 
 				}
 				//if it is a subroutine from another class, OR a subroutine called on another object
@@ -379,36 +387,38 @@ public class CompilationEngine {
 					if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name: we have a function call
 						String className = current;
 						eatIdentifier();
+						
 						eatSymbol('.');
 						
 						String subroutineName = current;
 						eatIdentifier();
+						
 						eatSymbol('(');
 						int nArgs  = compileExpressionList();
 						eatSymbol(')');
 						
-						writer.format("call %s.%s %d\n", className, subroutineName, nArgs);
+						writer.format("call %s.%s %d\n", className, subroutineName, nArgs); // no object reference required for a function call
 					}
-					
 					else { // the identifier is recognised as a variable name, therefore this is a method acting upon that [variable name] object
 						String varName = current;
 						String className = symbolTable.TypeOf(current);
 						
 						WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
-						//writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
 						
 						eatIdentifier();
 						eatSymbol('.');
 						
 						String subroutineName = current;
 						eatIdentifier();
+						
 						eatSymbol('(');
 						int nArgs  = compileExpressionList();
 						eatSymbol(')');
 						
-						writer.format("call %s.%s %d\n", className, subroutineName, nArgs + 1);
+						writer.format("call %s.%s %d\n", className, subroutineName, nArgs + 1); //again, we account for the extra reference pushed as the first parameter/argument
 					}
 				}
+				
 				else {
 					System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect subroutineCall declaration "
 							, inputFileName, tokenizer.getLine()));
@@ -416,13 +426,13 @@ public class CompilationEngine {
 					System.exit(0);
 				}
 	}
+	
 	private void compileReturnStatement() {
-
 		eatKeyword(RETURN);
 		
 		if (currentSubroutineType == CONSTRUCTOR) { //if we have a constructor, then it MUST return "this", the address of the new object
 			eatKeyword(THIS);
-			writer.print("push pointer 0\n"
+			writer.print("push pointer 0\n" //constructor pushes the reference of the object it's constructing in order to return it
 					   + "return\n");
 			eatSymbol(';');
 			return;
@@ -436,11 +446,11 @@ public class CompilationEngine {
 				System.exit(0);
 			}
 			else {
-				writer.print("push constant 0\n"
+				writer.print("push constant 0\n" //void subroutines push a dummy value before returning
 						   + "return\n");
 			}	
 		}
-		else {
+		else { //if the current subroutine return type if NOT void
 			if (isExpression()) {
 				compileExpression();
 				writer.print("return\n");
@@ -456,17 +466,15 @@ public class CompilationEngine {
 	}	
 
 	private void compileExpression() {
-		
 		compileTerm();
-		while ((tokenType == SYMBOL) && contains(op, symbol) ) {
+		while ((tokenType == SYMBOL) && contains(op, symbol) ) {//we keep compiling terms while we keep encountering op symbols
 			char currentSymbol = symbol;
-			
 			eatSymbol(symbol);
+			
 			compileTerm();
 			
 			WriteArithmetic(currentSymbol);
 		}
-		
 	}	
 	
 	private void compileTerm() {
@@ -485,8 +493,8 @@ public class CompilationEngine {
 			}
 			eatStringConstant();
 		}
-			
-		//if it is a keyword constant:
+		
+		//if it is a keyword constant, like true, false, null or this
 		else if (tokenType == KEYWORD) {
 			if (keyword == TRUE) {
 				writer.print("push constant 0\n"
@@ -508,6 +516,8 @@ public class CompilationEngine {
 				System.exit(0); 		
 			}
 		}
+		
+		//if the term starts with a variable's name:
 		else if (tokenType == IDENTIFIER) {
 			//if it is a variable array declaration:
 			if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '[') ) {
@@ -522,22 +532,24 @@ public class CompilationEngine {
 						   + "pop pointer 1\n" //it is then popped into the THAT segment
 						   + "push that 0\n"); //the value of the array at the [expression] index is then pushed onto the stack
 			}
-			//if it is a subroutinecall:
+			//if it is a subroutine call upon that variable:
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && ((tokenizer.getToken2().charAt(0) == '(') || (tokenizer.getToken2().charAt(0) == '.')) )
 				compileSubroutineCall();
-			//if it was just a variable:
+			//if it was just a primitive or reference variable:
 			else {
 				WritePushPop("push", current);
 				eatIdentifier();
 			}
 		}
+		
 		//if it is another expression:
 		else if ((tokenType == SYMBOL) && (symbol == '(')) {
 			eatSymbol('(');
 			compileExpression();
 			eatSymbol(')');
 		}
-		//if it is a unaryOp term:
+		
+		//if the term starts with an unaryOp symbol:
 		else if ((tokenType == SYMBOL) && ((symbol == '-') || (symbol == '~')) ) {
 			char thisSymbol = symbol;
 			eatSymbol(symbol);
@@ -548,16 +560,18 @@ public class CompilationEngine {
 			else 
 				writer.print("not\n");
 		}
+		
+		//if no condition was satisfied, as per the Jakc syntax:
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d: invalid term declaration", inputFileName, tokenizer.getLine()));
 			writer.close();
 			System.exit(0); 
 		}
-
 	}
 	
 	private int compileExpressionList() {
-		int noOfExpressions = 0;
+		int noOfExpressions = 0; // the number of compiler expressions is returned, to be used by compileSubroutineCall()
+		
 		if (isExpression()) {
 			compileExpression();
 			noOfExpressions ++;
@@ -571,6 +585,7 @@ public class CompilationEngine {
 		return noOfExpressions;
 	}	
 	
+	/*processes an int keyword, accepting as arguments a list of valid keywords*/
 	private boolean eatKeyword(int... correctKeywords) {
 		if (tokenType == KEYWORD) {
 			for (int correctKeyword: correctKeywords) {
@@ -590,6 +605,7 @@ public class CompilationEngine {
 		return false;
 	}
 	
+	/*processes a char symbol, accepting as arguments a list of valid symbols*/
 	private boolean eatSymbol(char... correctSymbols) {
 		if (tokenType == SYMBOL) {
 			for (char correctSymbol : correctSymbols) {
@@ -604,6 +620,7 @@ public class CompilationEngine {
 			System.exit(0);
 			return false;
 		}
+		
 		System.out.println(String.format("Syntax Error: in file \"%s\" at line %d: incorrect token type, expected symbol, one of following: ", inputFileName, tokenizer.getLine(), symbol));
 		System.out.println(correctSymbols);
 		writer.close();
@@ -611,6 +628,7 @@ public class CompilationEngine {
 		return false;
 	}
 	
+	/* processes an integer constant */
 	private boolean eatIntegerConstant() {
 		if (tokenType == INT_CONST) {
 			advance();
@@ -623,6 +641,7 @@ public class CompilationEngine {
 		}
 	}
 	
+	/* processes a string constant*/
 	private boolean eatStringConstant() {
 		if (tokenType == STRING_CONST) {
 				advance(); 
@@ -636,6 +655,7 @@ public class CompilationEngine {
 		}
 	}
 	
+	/*processes a String identifier, checking against a list of valid identifiers*/
 	private boolean eatIdentifier(String... correctIdentifiers) {
 		if (tokenType == IDENTIFIER) {
 			if (correctIdentifiers.length == 0) {
@@ -662,6 +682,7 @@ public class CompilationEngine {
 		return false;
 	}
 	
+	/* process a token that is to be a type */
 	private boolean eatType() {
 		if (tokenType == KEYWORD)
 			return eatKeyword(INT, CHAR, BOOLEAN);
@@ -676,7 +697,7 @@ public class CompilationEngine {
 		}
 	}
 	
-
+	/* returns true if we have the start of an expression, otherwise false*/
 	private boolean isExpression() {
 		if (tokenType == INT_CONST)
 			return true;
@@ -698,6 +719,7 @@ public class CompilationEngine {
 			return false;
 	}
 	
+	/* returns true if the char list opList contains the char symbolToCheck, otherwise false */
 	private boolean contains(char[] opList, char symbolToCheck) {
 		for (char c: opList)
 			if (symbolToCheck == c)
@@ -705,17 +727,6 @@ public class CompilationEngine {
 		return false;
 	}
 	
-/*	private void printBody(String input) {
-
-		writer.format(input);
-		System.out.print(input);
-	}*/
-	
-/*	private void printToken() {
-
-		writer.format("<%s> %s </%s>\n", tokenizer.getTokenLabel(), tokenizer.getToken(), tokenizer.getTokenLabel());
-		System.out.print(String.format("<%s> %s </%s>\n", tokenizer.getTokenLabel(), tokenizer.getToken(), tokenizer.getTokenLabel()));
-	}*/
 	
 	//advances the token offered by the tokenizer, and updates associated variables
 	private void advance() {
@@ -728,6 +739,7 @@ public class CompilationEngine {
 			symbol = tokenizer.getSymbol();
 	}
 	
+	/* writes a push or pop command that uses the variable's kind and index from the symbolTable */
 	private void WritePushPop(String pushPop, String varName) {
 		
 		switch (symbolTable.KindOf(varName)) {
@@ -752,11 +764,14 @@ public class CompilationEngine {
 		}
 	}
 	
+	/* writes an arithmetic operation in VM code, by using the symbol character from the high-level code as input*/
 	private void WriteArithmetic(char expressionSymbol) {
 		writer.format("%s\n", arithmeticOpMap.get(expressionSymbol));
 	}
 	
+	/* closes the writer, allowing the file to be written from the buffer */
 	public void close() {
 		writer.close();
 	}
+	
 }

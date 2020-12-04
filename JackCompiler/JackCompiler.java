@@ -1,24 +1,10 @@
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.*;
-
-
 
 public class JackCompiler{
     
     public static void main(String args[]){
-    	
-    	
-    	HashMap<String, List<Object>> classTable = new HashMap<String, List<Object>>();
-        classTable.put("george", Arrays.asList("Pointer", 3));
-        System.out.println(classTable.get("george").getClass().getName());
-        System.out.println(classTable.get("george").get(0).getClass().getName());
-        System.out.println(classTable.get("george").get(1).getClass().getName());
-        
-        /*if (classTable.get("patron") == null)
-        	System.out.println("Caught it!");
-        else System.out.println(classTable.get("patron").getClass().getName());*/
         
         //checks for the correct number of arguments
         if (args.length != 1) {
@@ -39,12 +25,10 @@ public class JackCompiler{
         	System.out.println("no files found, exiting program");
         	return;
         }        	
-
         
         //output file will be named after the directory, or the single jack file that was provided
         File inputFile;
         File outputFile;
-        
         CompilationEngine compilationEngine;    
         
         //we go through parsing each file
