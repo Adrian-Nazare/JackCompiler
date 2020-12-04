@@ -85,7 +85,7 @@ public class Tokenizer {
 		//First we check to see if the first char of the word is a symbol, in which case we process it directly
 		for (char c: symbolList) {
 			if (word.charAt(0) == c) {
-				if (c == '<')
+		/*		if (c == '<')
 					token2 = "" + "&lt;";
 				else if (c == '>')
 					token2 = "" + "&gt;";
@@ -94,8 +94,8 @@ public class Tokenizer {
 				else if (c == '&')
 					token2 = "" + "&amp;";
 				else 
-					token2 = "" + c;
-
+					token2 = "" + c; */
+				token2 = "" + c;
 				token2Type = SYMBOL;
 				word = word.substring(1);
 				return;

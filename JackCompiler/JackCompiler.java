@@ -53,11 +53,11 @@ public class JackCompiler{
         	if ((new File (args[0])).isDirectory()) {
         		//we append the path name to the name of each file entry in the directory, so that it is found
             	inputFile = new File (String.format("%s\\%s", args[0], filesEntry));
-        		outputFile = new File (String.format("%s\\%s", args[0], String.format("%s.xml", filesEntry.substring(0, filesEntry.lastIndexOf(".")))) );
+        		outputFile = new File (String.format("%s\\%s", args[0], String.format("%s.vm", filesEntry.substring(0, filesEntry.lastIndexOf(".")))) );
         	}
         	else {
             	inputFile = new File (filesEntry);
-        		outputFile = new File (String.format("%s.xml", filesEntry.substring(0, filesEntry.lastIndexOf("."))));
+        		outputFile = new File (String.format("%s.vm", filesEntry.substring(0, filesEntry.lastIndexOf("."))));
         	}
 
             compilationEngine = new CompilationEngine(inputFile, outputFile);

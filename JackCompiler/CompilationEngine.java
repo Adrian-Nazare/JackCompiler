@@ -36,7 +36,7 @@ public class CompilationEngine {
     String currentSubroutineVarType;
 	String currentSubroutineVarName;
 	String currentSubroutineReturnType;
-	int labelCounter;
+	int ifLabelCounter, whileLabelCounter;
     	
 	//constructor
 	public CompilationEngine(File inputFile, File outputFile) {
@@ -55,7 +55,6 @@ public class CompilationEngine {
     							  '<', "lt", 
     							  '&', "and",
     							  '|', "or");
-    		labelCounter = 0;
     		current = tokenizer.getToken();
     		tokenType = tokenizer.getTokenType();
     		if (tokenType == KEYWORD)
@@ -64,6 +63,7 @@ public class CompilationEngine {
     			symbol = tokenizer.getSymbol();
     		else {
     			System.out.println(String.format("Internal Error: invalid token parsed in file \"%s\" at line %d", inputFileName, tokenizer.getLine()));
+    			writer.close();
     			System.exit(0);
     		}   		
     		
@@ -83,7 +83,7 @@ public class CompilationEngine {
 		symbolTable.startClass();
 		
 		eatKeyword(CLASS); //we check for the 'class' keyword
-		currentClassName = inputFileName.substring(0, inputFileName.lastIndexOf(".vm"));
+		currentClassName = inputFileName.substring(0, inputFileName.lastIndexOf(".jack"));
 		eatIdentifier(currentClassName); //we check for and process an identifier for className
 		eatSymbol('{');	//we check for and process the opening curly bracket
 		
@@ -126,6 +126,8 @@ public class CompilationEngine {
 	private void compileSubroutineDec() { //WARNING: unfinished
 		
 		symbolTable.startSubroutine();
+		ifLabelCounter = 0;
+		whileLabelCounter = 0;
 		currentSubroutineType = keyword;
 		
 		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine
@@ -270,11 +272,9 @@ public class CompilationEngine {
 			compileExpression(); //compile the expression2 on the right side of the equal sign
 			
 			writer.format("pop temp 0\n" //we pop the resulting value into a temporary value, in case expression 2 used an array
-						+ "pop pointer1\n" //we pop the address of assignmentVariable[expression1] into pointer 1
+						+ "pop pointer 1\n" //we pop the address of assignmentVariable[expression1] into pointer 1
 						+ "push temp 0\n" // we again push the saved value of expression 2
 						+ "pop that 0\n"); //we pop it into the RAM location that address assignmentVariable[expression1] points to
-			
-			eatSymbol(';');
 		}
 		
 		else { //if a normal variable assignment
@@ -282,58 +282,70 @@ public class CompilationEngine {
 			compileExpression();
 			WritePushPop("pop", assignmentVariable);
 		}
+		eatSymbol(';');
 	}	
 	
 	private void compileIfStatement() {
+		int thisIfLabelCounter = ifLabelCounter;
+		ifLabelCounter++;
 		
 		eatKeyword(IF);
 		eatSymbol('(');
 		compileExpression();
 		eatSymbol(')');
 		
-		writer.print("not\n");
-		writer.format("if-goto IF%d:L1\n", labelCounter);
+		//writer.print("not\n");
+		//writer.format("if-goto IF%d:L1\n", thisLabelCounter);
+		writer.format("if-goto IF_TRUE%d\n"
+					+ "goto IF_FALSE%d\n"
+					+ "label IF_TRUE%d\n", thisIfLabelCounter, thisIfLabelCounter, thisIfLabelCounter);
 		
 		eatSymbol('{');
 		compileStatements();
 		eatSymbol('}');		
 		
+		
 		if ((tokenType == KEYWORD) && (keyword == ELSE)) {
-			writer.format("goto IF%d:L2\n", labelCounter);
-			writer.format("label IF%d:L1\n", labelCounter);
+			writer.format("goto IF_END%d\n"
+						+ "label IF_FALSE%d\n", thisIfLabelCounter, thisIfLabelCounter);
+			//writer.format("goto IF%d:L2\n", thisLabelCounter); //L1 is FALSE
+			//writer.format("label IF%d:L1\n", thisLabelCounter); //L2 is TRUE
 			
 			eatKeyword(ELSE);
 			eatSymbol('{');
 			compileStatements();
 			eatSymbol('}');
 			
-			writer.format("label IF%d:L2\n", labelCounter);
+			//writer.format("label IF%d:L2\n", thisLabelCounter);
+			writer.format("label IF_END%d\n", thisIfLabelCounter);
 		}
 		else
-			writer.format("label IF%d:L1\n", labelCounter);
-		
-		labelCounter++;
+			writer.format("label IF_FALSE%d\n", thisIfLabelCounter);
+			//writer.format("label IF%d:L1\n", thisLabelCounter);
+
 	}	
 	
 	private void compileWhileStatement() {
+		int thisWhileLabelCounter = whileLabelCounter;
+		whileLabelCounter++;
+		
 		eatKeyword(WHILE);
-		writer.format("label WHILE%d:L1\n", labelCounter);
+		writer.format("label WHILE_EXP%d\n", thisWhileLabelCounter);
 		
 		eatSymbol('(');
 		compileExpression();
 		eatSymbol(')');
 		
 		writer.print("not\n");
-		writer.format("if-goto WHILE%d:L2\n", labelCounter);
+		writer.format("if-goto  WHILE_END%d\n", thisWhileLabelCounter);
 		
 		eatSymbol('{');
 		compileStatements();
 		eatSymbol('}');
 		
-		writer.format("goto WHILE%d:L1\n", labelCounter);
-		writer.format("label WHILE%d:L2\n", labelCounter);
-		
-		labelCounter++;
+		writer.format("goto WHILE_EXP%d\n", thisWhileLabelCounter);
+		writer.format("label  WHILE_END%d\n", thisWhileLabelCounter);
+
 	}	
 	
 	private void compileDoStatement() {
@@ -351,16 +363,20 @@ public class CompilationEngine {
 					String subroutineName = current;
 					eatIdentifier();
 					
+					// we push pointer 0, so that the method has access to the address of this object
+					writer.format("push pointer 0\n"); 
+					
 					eatSymbol('(');
 					int nArgs = compileExpressionList();
 					eatSymbol(')');
 					
-					writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs);
+					//we increase nArgs by so that we account for the object's reference as the first argument
+					writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs + 1); 
 				}
 				//if it is a subroutine from another class, OR a subroutine called on another object
 				else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
 					
-					if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name
+					if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name: we have a function call
 						String className = current;
 						eatIdentifier();
 						eatSymbol('.');
@@ -379,7 +395,7 @@ public class CompilationEngine {
 						String className = symbolTable.TypeOf(current);
 						
 						WritePushPop("push", varName); // we push the variable itself as the first argument for the function call
-						writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
+						//writer.print("pop pointer 0\n"); //we pop its value into the THIS memory segment in order to access the object's fields
 						
 						eatIdentifier();
 						eatSymbol('.');
@@ -396,6 +412,7 @@ public class CompilationEngine {
 				else {
 					System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect subroutineCall declaration "
 							, inputFileName, tokenizer.getLine()));
+					writer.close();
 					System.exit(0);
 				}
 	}
@@ -405,6 +422,9 @@ public class CompilationEngine {
 		
 		if (currentSubroutineType == CONSTRUCTOR) { //if we have a constructor, then it MUST return "this", the address of the new object
 			eatKeyword(THIS);
+			writer.print("push pointer 0\n"
+					   + "return\n");
+			eatSymbol(';');
 			return;
 		}
 		
@@ -412,6 +432,7 @@ public class CompilationEngine {
 			if (isExpression()) {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, return value "
 						+ "specified despite subroutine returning void", inputFileName, tokenizer.getLine()));
+				writer.close();
 				System.exit(0);
 			}
 			else {
@@ -427,13 +448,11 @@ public class CompilationEngine {
 			else {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, no return value "
 						+ "specified for a non-void subroutine", inputFileName, tokenizer.getLine()));
+				writer.close();
 				System.exit(0);
 			}
 		}
-		
 		eatSymbol(';');
-		
-
 	}	
 
 	private void compileExpression() {
@@ -458,9 +477,11 @@ public class CompilationEngine {
 			writer.format("push constant %s\n", currentInt);
 		}
 		else if (tokenType == STRING_CONST) {
-			writer.format("call String.new %d\n", current.length());
+			writer.format("push constant %d\n"
+						+ "call String.new 1\n", current.length());
 			for (char c: current.toCharArray()) {
-				writer.format("call String.appendChar %d\n", c);
+				writer.format("push constant %d\n"
+							+ "call String.appendChar 2\n", (int) c);
 			}
 			eatStringConstant();
 		}
@@ -469,7 +490,7 @@ public class CompilationEngine {
 		else if (tokenType == KEYWORD) {
 			if (keyword == TRUE) {
 				writer.print("push constant 0\n"
-						   + "neg\n");
+						   + "not\n");
 				eatKeyword(TRUE);
 			}
 			else if ((keyword == FALSE) || (keyword == NULL)) {
@@ -477,12 +498,13 @@ public class CompilationEngine {
 				eatKeyword(FALSE, NULL);
 			}
 			else if (keyword == THIS) {
-				writer.print("push this 0\n");
+				writer.print("push pointer 0\n");
 				eatKeyword(THIS);
 			}
 			else {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, for term declaration "
 						+ "as symbol: expected 'true', 'false', 'null' or 'this'", inputFileName, tokenizer.getLine()));
+				writer.close();
 				System.exit(0); 		
 			}
 		}
@@ -498,7 +520,7 @@ public class CompilationEngine {
 				
 				writer.print("add\n" //the value of the compiled expression is added to the value of the variable's base address
 						   + "pop pointer 1\n" //it is then popped into the THAT segment
-						   + "push that 0"); //the value of the array at the [expression] index is then pushed onto the stack
+						   + "push that 0\n"); //the value of the array at the [expression] index is then pushed onto the stack
 			}
 			//if it is a subroutinecall:
 			else if ( (tokenizer.getToken2Type() == SYMBOL) && ((tokenizer.getToken2().charAt(0) == '(') || (tokenizer.getToken2().charAt(0) == '.')) )
@@ -517,15 +539,18 @@ public class CompilationEngine {
 		}
 		//if it is a unaryOp term:
 		else if ((tokenType == SYMBOL) && ((symbol == '-') || (symbol == '~')) ) {
-			if (symbol == '-')
+			char thisSymbol = symbol;
+			eatSymbol(symbol);
+			compileTerm();
+			
+			if (thisSymbol == '-')
 				writer.print("neg\n");
 			else 
 				writer.print("not\n");
-			eatSymbol(symbol);
-			compileTerm();
 		}
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d: invalid term declaration", inputFileName, tokenizer.getLine()));
+			writer.close();
 			System.exit(0); 
 		}
 
@@ -555,10 +580,12 @@ public class CompilationEngine {
 				}			
 			}
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect keyword", inputFileName, tokenizer.getLine()));
+			writer.close();
 			System.exit(0);
 			return false;
 		}
 		System.out.println(String.format("Syntax Error in file \"%s\" at line %d, incorrect token, expected keyword", inputFileName, tokenizer.getLine()));
+		writer.close();
 		System.exit(0);
 		return false;
 	}
@@ -573,11 +600,13 @@ public class CompilationEngine {
 			}
 			System.out.println(String.format("Syntax Error: in file \"%s\" at line %d, incorrect symbol, expected one of: ", inputFileName, tokenizer.getLine()));
 			System.out.println(correctSymbols);
+			writer.close();
 			System.exit(0);
 			return false;
 		}
 		System.out.println(String.format("Syntax Error: in file \"%s\" at line %d: incorrect token type, expected symbol, one of following: ", inputFileName, tokenizer.getLine(), symbol));
 		System.out.println(correctSymbols);
+		writer.close();
 		System.exit(0);
 		return false;
 	}
@@ -588,6 +617,7 @@ public class CompilationEngine {
 			return true;}
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected integer constant", inputFileName, tokenizer.getLine()));
+			writer.close();
 			System.exit(0);
 			return false;
 		}
@@ -600,6 +630,7 @@ public class CompilationEngine {
 			}
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected string constant", inputFileName, tokenizer.getLine()));
+			writer.close();
 			System.exit(0);
 			return false;
 		}
@@ -613,18 +644,21 @@ public class CompilationEngine {
 			}
 			else if (correctIdentifiers.length != 0) {
 				for (String correctIdentifier : correctIdentifiers) {
-					if (current == correctIdentifier) {
+					if (current.equals(correctIdentifier)) {
 						advance();	
 						return true;
 					}
 				}
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected one of following identifiers:", inputFileName, tokenizer.getLine()));
 				System.out.println(correctIdentifiers);
+				writer.close();
+				System.exit(0);
 				return false;
 			}
 		}
 		System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected identifier", inputFileName, tokenizer.getLine()));
 		System.exit(0);
+		writer.close();
 		return false;
 	}
 	
@@ -636,6 +670,7 @@ public class CompilationEngine {
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected a type "
 					+ "declaration (int, char, boolean, or a className)", inputFileName, tokenizer.getLine()));
+			writer.close();
 			System.exit(0);
 			return false;
 		}
@@ -697,7 +732,7 @@ public class CompilationEngine {
 		
 		switch (symbolTable.KindOf(varName)) {
 		case STATIC:
-			writer.format("%s %s.static %d\n", pushPop, currentClassName, symbolTable.IndexOf(varName));
+			writer.format("%s static %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
 		case FIELD:
 			writer.format("%s this %d\n", pushPop, symbolTable.IndexOf(varName));
