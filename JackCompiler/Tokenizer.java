@@ -3,12 +3,7 @@ import java.io.FileReader;
 import java.io.IOException;
 
 public class Tokenizer {
-	//Declaring & initialising the constants 
-    final int KEYWORD=0, SYMBOL=1, INT_CONST=2, STRING_CONST=3, IDENTIFIER=4;
-    final int CLASS=5, CONSTRUCTOR=6, FUNCTION=7, METHOD=8, FIELD=9, STATIC=10, 
-    		  VAR=11, INT=12, CHAR=13, BOOLEAN=14, VOID=15, TRUE=16, FALSE=17, 
-    		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25;
-	
+
 	FileReader reader = null;
 	String inputFileName;
 	
@@ -49,7 +44,7 @@ public class Tokenizer {
 	}
 	
 	/* Updates the tokens with the next ones: token becomes token2, 
-	 * and the following token2 is computes, same for the labels */
+	 * and the following token2 is computed, same for the labels */
 	public void advance() {
 		token = token2;
 		tokenType = token2Type;
@@ -85,18 +80,8 @@ public class Tokenizer {
 		//First we check to see if the first char of the word is a symbol, in which case we process it directly
 		for (char c: symbolList) {
 			if (word.charAt(0) == c) {
-		/*		if (c == '<')
-					token2 = "" + "&lt;";
-				else if (c == '>')
-					token2 = "" + "&gt;";
-				else if (c == '"')
-					token2 = "" + "&quot;";
-				else if (c == '&')
-					token2 = "" + "&amp;";
-				else 
-					token2 = "" + c; */
 				token2 = "" + c;
-				token2Type = SYMBOL;
+				token2Type = JackCompiler.SYMBOL;
 				word = word.substring(1);
 				return;
 			}
@@ -135,18 +120,18 @@ public class Tokenizer {
 		for (String s: KeywordList) {
 			if (wordSection.equals(s)) {
 				token2 = s;
-				token2Type = KEYWORD;
+				token2Type = JackCompiler.KEYWORD;
 				return true;
 			}
 		}
 		if (isNumeric(wordSection)) {
 			token2 = wordSection;
-			token2Type = INT_CONST;
+			token2Type = JackCompiler.INT_CONST;
 			return true;
 		}
 		else if ((Character.isLetter(wordSection.charAt(0))) || (wordSection.charAt(0) == '_') ) {
 			token2 = wordSection;
-			token2Type = IDENTIFIER;
+			token2Type = JackCompiler.IDENTIFIER;
 			return true;
 		}
 		else {
@@ -211,6 +196,7 @@ public class Tokenizer {
 
 	private void processTokens() {
 		try {
+			//we filter out invalid characters, numerical codes stand for ASCII characters
 			while ( (current == 38) || (current == 93) || (current == 95) || ((current > 39) && (current < 63)) || ((current > 64) && (current < 92)) || ((current > 96) && (current < 127)) ) {	
 				word += (char) current;
 				current = reader.read();
@@ -245,7 +231,7 @@ public class Tokenizer {
 	private void processString() {
 		try {
 			token2 = "";
-			token2Type = STRING_CONST;
+			token2Type = JackCompiler.STRING_CONST;
 			current = reader.read();
 			while ((current != '\n') && (current != '\r') && (current != '"')) {
 				token2 += (char) current;
@@ -308,15 +294,15 @@ public class Tokenizer {
 	//Used for printing out the labels of the tokens by the CompilationEngine
 	public String getTokenLabel() {
 		switch (tokenType) {
-		case KEYWORD:
+		case JackCompiler.KEYWORD:
 			return "keyword";
-		case SYMBOL:
+		case JackCompiler.SYMBOL:
 			return "symbol";
-		case INT_CONST:
+		case JackCompiler.INT_CONST:
 			return "integerConstant";
-		case STRING_CONST:
+		case JackCompiler.STRING_CONST:
 			return "stringConstant";
-		case IDENTIFIER:
+		case JackCompiler.IDENTIFIER:
 			return "identifier";
 		default:
 			return "DEFAULT";
@@ -325,27 +311,27 @@ public class Tokenizer {
 	
 	public int getKeyword() {
 		switch (token) {
-		case "class": return CLASS;
-		case "constructor":	return CONSTRUCTOR;
-		case "function": return FUNCTION;
-		case "method": return METHOD;
-		case "field": return FIELD;
-		case "static": return STATIC;
-		case "var": return VAR;
-		case "int": return INT;
-		case "char": return CHAR;
-		case "boolean": return BOOLEAN;
-		case "void": return VOID;
-		case "true": return TRUE;
-		case "false": return FALSE;
-		case "null": return NULL;
-		case "this": return THIS;
-		case "let": return LET;
-		case "do": return DO;
-		case "if": return IF;
-		case "else": return ELSE;
-		case "while": return WHILE;
-		case "return": return RETURN;
+		case "class": return JackCompiler.CLASS;
+		case "constructor":	return JackCompiler.CONSTRUCTOR;
+		case "function": return JackCompiler.FUNCTION;
+		case "method": return JackCompiler.METHOD;
+		case "field": return JackCompiler.FIELD;
+		case "static": return JackCompiler.STATIC;
+		case "var": return JackCompiler.VAR;
+		case "int": return JackCompiler.INT;
+		case "char": return JackCompiler.CHAR;
+		case "boolean": return JackCompiler.BOOLEAN;
+		case "void": return JackCompiler.VOID;
+		case "true": return JackCompiler.TRUE;
+		case "false": return JackCompiler.FALSE;
+		case "null": return JackCompiler.NULL;
+		case "this": return JackCompiler.THIS;
+		case "let": return JackCompiler.LET;
+		case "do": return JackCompiler.DO;
+		case "if": return JackCompiler.IF;
+		case "else": return JackCompiler.ELSE;
+		case "while": return JackCompiler.WHILE;
+		case "return": return JackCompiler.RETURN;
 		default: return -1;
 		}
 	}

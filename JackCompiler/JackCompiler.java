@@ -3,6 +3,13 @@ import java.util.List;
 import java.util.ArrayList;
 
 public class JackCompiler{
+	
+	//Declaring & initialising all the constants as static variables in order to be accessed globally 
+    final static int KEYWORD=0, SYMBOL=1, INT_CONST=2, STRING_CONST=3, IDENTIFIER=4;
+    final static int CLASS=5, CONSTRUCTOR=6, FUNCTION=7, METHOD=8, FIELD=9, STATIC=10, 
+    		  VAR=11, INT=12, CHAR=13, BOOLEAN=14, VOID=15, TRUE=16, FALSE=17, 
+    		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25,
+    		  NONE=26, ARG=27;
     
     public static void main(String args[]){
         

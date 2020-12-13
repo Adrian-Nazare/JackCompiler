@@ -1,18 +1,10 @@
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
-//import java.util.HashMap;
 import java.util.Map;
-//import java.util.List;
 
 public class CompilationEngine {
-	//Declaring & initialising the constants 
-    final int KEYWORD=0, SYMBOL=1, INT_CONST=2, STRING_CONST=3, IDENTIFIER=4;
-    final int CLASS=5, CONSTRUCTOR=6, FUNCTION=7, METHOD=8, FIELD=9, STATIC=10, 
-    		  VAR=11, INT=12, CHAR=13, BOOLEAN=14, VOID=15, TRUE=16, FALSE=17, 
-    		  NULL=18, THIS=19, LET=20, DO=21, IF=22, ELSE=23, WHILE=24, RETURN=25,
-    		  NONE=26, ARG=27;
-    
+	    
     char[] op = {'+', '-', '*', '/', '&', '|', '<', '>', '='}; //a list of all the symbols to make searching through them easier
     Map<Character, String> arithmeticOpMap; //a hash map to correlate a symbol directly with an arithmetic/logical operation
     
@@ -62,9 +54,9 @@ public class CompilationEngine {
     							  '|', "or");
     		current = tokenizer.getToken();
     		tokenType = tokenizer.getTokenType();
-    		if (tokenType == KEYWORD)
+    		if (tokenType == JackCompiler.KEYWORD)
     			keyword = tokenizer.getKeyword();
-    		else if (tokenType == SYMBOL)
+    		else if (tokenType == JackCompiler.SYMBOL)
     			symbol = tokenizer.getSymbol();
     		else {
     			System.out.println(String.format("Internal Error: invalid token parsed in file \"%s\" at line %d", inputFileName, tokenizer.getLine()));
@@ -87,19 +79,19 @@ public class CompilationEngine {
 	private void compileClass() {
 		symbolTable.startClass(); //starts a new class symbolTable for keeping track of the variables' type, kind and number
 		
-		eatKeyword(CLASS); //we check for the 'class' keyword
+		eatKeyword(JackCompiler.CLASS); //we check for the 'class' keyword
 		currentClassName = inputFileName.substring(0, inputFileName.lastIndexOf(".jack"));
 		//we check for and process an identifier for className, making sure it's the the same as the fileName
 		eatIdentifier(currentClassName); 
 		eatSymbol('{');	//we check for and process the opening curly bracket
 		
 		//as long as we keep encountering 'static' or 'field', it means that we have a class variable declaration, and we keep invoking compileClassVarDec
-		while ( (tokenType == KEYWORD) && ((keyword == STATIC) || (keyword == FIELD)) ) {
+		while ( (tokenType == JackCompiler.KEYWORD) && ((keyword == JackCompiler.STATIC) || (keyword == JackCompiler.FIELD)) ) {
 			compileClassVarDec();
 		}
 		
 		//as long as we keep encountering 'constructor', 'function' or 'method', it means that we have a class variable declaration, and we keep invoking subroutineDec
-		while ( (tokenType == KEYWORD) && ((keyword == CONSTRUCTOR) || (keyword == FUNCTION) || (keyword == METHOD)) ) {
+		while ( (tokenType == JackCompiler.KEYWORD) && ((keyword == JackCompiler.CONSTRUCTOR) || (keyword == JackCompiler.FUNCTION) || (keyword == JackCompiler.METHOD)) ) {
 			compileSubroutineDec();
 		}
 		
@@ -110,7 +102,7 @@ public class CompilationEngine {
 	/* compiles the variable declarations of the current class and populates the class symbol table*/
 	private void compileClassVarDec() {
 		int classVarKind = keyword;
-		eatKeyword(STATIC, FIELD); //a variable must either be of kind static or field
+		eatKeyword(JackCompiler.STATIC, JackCompiler.FIELD); //a variable must either be of kind static or field
 
 		String classVarType = current;
 		eatType();
@@ -120,7 +112,7 @@ public class CompilationEngine {
 		
 		symbolTable.define(classVarName, classVarType, classVarKind);
 		//while encountering commas, we keep processing the comma, together with an expected variable name
-		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
+		while ( (tokenType == JackCompiler.SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
 			classVarName = current;
 			eatIdentifier();
@@ -138,16 +130,16 @@ public class CompilationEngine {
 		whileLabelCounter = 0;
 		
 		currentSubroutineType = keyword; //keeps track if the subroutine is a constructor, function or method
-		eatKeyword(CONSTRUCTOR, FUNCTION, METHOD); //process the type of subroutine, making sure it's one of those 3
+		eatKeyword(JackCompiler.CONSTRUCTOR, JackCompiler.FUNCTION, JackCompiler.METHOD); //process the type of subroutine, making sure it's one of those 3
 
 		currentSubroutineReturnType = current;
 		//if the subroutine is a constructor, we make sure that its return type is the current class name
-		if (currentSubroutineType == CONSTRUCTOR)
+		if (currentSubroutineType == JackCompiler.CONSTRUCTOR)
 			eatIdentifier(currentClassName);
 		//if not, it can be of type void, or int/char/boolean/className returning type (for the subroutine of type method or function)
 		else { 
-			if ((tokenType == KEYWORD) && (keyword == VOID))
-				eatKeyword(VOID);
+			if ((tokenType == JackCompiler.KEYWORD) && (keyword == JackCompiler.VOID))
+				eatKeyword(JackCompiler.VOID);
 			else
 				eatType();
 		}
@@ -166,23 +158,23 @@ public class CompilationEngine {
 	private void compileParameterList() {
 		//if we have a subroutine of type method, we add an argument 0 which will later become the base address of the object 
 		//we are working on, after the caller pushes that address first before the other arguments, and then calling this method
-		if (currentSubroutineType == METHOD) 
-			symbolTable.define("this", currentClassName, ARG);
+		if (currentSubroutineType == JackCompiler.METHOD) 
+			symbolTable.define("this", currentClassName, JackCompiler.ARG);
 		
 		currentSubroutineVarType = current;
 		//if the return type is a keyword, make sure that is of type int, char or boolean
-		if (((tokenType == KEYWORD) && ((keyword == INT) || (keyword == CHAR) || (keyword == BOOLEAN))) ||
-				(tokenType == IDENTIFIER) ) { //otherwise it is assumed to be a className type
+		if (((tokenType == JackCompiler.KEYWORD) && ((keyword == JackCompiler.INT) || (keyword == JackCompiler.CHAR) || (keyword == JackCompiler.BOOLEAN))) ||
+				(tokenType == JackCompiler.IDENTIFIER) ) { //otherwise it is assumed to be a className type
 			eatType(); //process the type
 			
 			currentSubroutineVarName = current;
 			eatIdentifier(); //process the variable name
 			
 			//before moving on to other arguments/parameters, we define it in the subroutine's symbolTable
-			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
+			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, JackCompiler.ARG);
 			
 			//if we encounter a comma, it means we have multiple variables of that t, and we keep processing them until no more commas are found
-			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
+			while ( (tokenType == JackCompiler.SYMBOL) && (symbol == ',') ) {
 				eatSymbol(',');
 				
 				currentSubroutineVarType = current;
@@ -190,7 +182,7 @@ public class CompilationEngine {
 				currentSubroutineVarName = current;
 				eatIdentifier();
 				
-				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, ARG);
+				symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, JackCompiler.ARG);
 			}
 		}	
 	}	
@@ -198,25 +190,25 @@ public class CompilationEngine {
 	private void compileSubroutineBody() {
 		eatSymbol('{');
 		//if we encounter a var keyword, it means we have more local variables, and we keep processing them
-		while ((tokenType == KEYWORD) && (keyword == VAR)) {
+		while ((tokenType == JackCompiler.KEYWORD) && (keyword == JackCompiler.VAR)) {
 			compileVarDec();
 		}
 		//after declaring (and counting in the symbolTable) all the local arguments, and before compiling the statements, 
 		//we need to declare in VM code that a function needing that many nVars will follow
-		writer.format("function %s.%s %d\n", currentClassName, currentSubroutineName, symbolTable.VarCount(VAR));
+		writer.format("function %s.%s %d\n", currentClassName, currentSubroutineName, symbolTable.VarCount(JackCompiler.VAR));
 		
 		//when compiling a *method* subroutine:		
-		if (currentSubroutineType == METHOD)
+		if (currentSubroutineType == JackCompiler.METHOD)
 			//we need to make sure that argument 0, which will be the base address of the object, will have been pushed, 
 			//then popped as pointer 0, in order for the method to access the object's fields	
 			writer.print("push argument 0\n" 
 					   + "pop pointer 0\n");
 		//when compiling a *constructor* subroutine:		
-		else if (currentSubroutineType == CONSTRUCTOR)
+		else if (currentSubroutineType == JackCompiler.CONSTRUCTOR)
 			writer.format("push constant %d\n"     //push the number of field variables that we need to allocate memory to 
 						+ "call Memory.alloc 1\n"  //Memory.alloc will allocate memory to that many 16-bit words, and return the address of the to-be object
 						+ "pop pointer 0\n",       //we pop that address into pointer 0, as the constructor function starts manipulating the object's fields
-						symbolTable.VarCount(FIELD));
+						symbolTable.VarCount(JackCompiler.FIELD));
 		
 		compileStatements(); 
 		eatSymbol('}');
@@ -224,7 +216,7 @@ public class CompilationEngine {
 	
 	//compiles all the local variable declarations 
 	private void compileVarDec() {
-		eatKeyword(VAR);
+		eatKeyword(JackCompiler.VAR);
 		
 		currentSubroutineVarType = current;
 		eatType();
@@ -232,32 +224,32 @@ public class CompilationEngine {
 		currentSubroutineVarName = current;
 		eatIdentifier();
 		
-		symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
+		symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, JackCompiler.VAR);
 		
 		//similar to the class, we keep compiling the to-be local variables until no more commas are encoutnered
-		while ( (tokenType == SYMBOL) && (symbol == ',') ) {
+		while ( (tokenType == JackCompiler.SYMBOL) && (symbol == ',') ) {
 			eatSymbol(',');
 			
 			currentSubroutineVarName = current;
 			eatIdentifier();
 			
-			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, VAR);
+			symbolTable.define(currentSubroutineVarName, currentSubroutineVarType, JackCompiler.VAR);
 		}
 		eatSymbol(';');
 	}	
 	
 	private void compileStatements() {
 		//we keep compiling different statements until we stop encountering a keyword for that statement
-		while ((tokenType == KEYWORD) && 
-			   ((keyword == LET) || (keyword == IF) || (keyword == WHILE) || (keyword == DO) || (keyword == RETURN)) ) {
+		while ((tokenType == JackCompiler.KEYWORD) && 
+			   ((keyword == JackCompiler.LET) || (keyword == JackCompiler.IF) || (keyword == JackCompiler.WHILE) || (keyword == JackCompiler.DO) || (keyword == JackCompiler.RETURN)) ) {
 
-			if (keyword == LET)
+			if (keyword == JackCompiler.LET)
 				compileLetStatement();
-			else if (keyword == IF)
+			else if (keyword == JackCompiler.IF)
 				compileIfStatement();
-			else if (keyword == WHILE)
+			else if (keyword == JackCompiler.WHILE)
 				compileWhileStatement();
-			else if (keyword == DO)
+			else if (keyword == JackCompiler.DO)
 				compileDoStatement();
 			else //the last choice: RETURN
 				compileReturnStatement();
@@ -265,13 +257,13 @@ public class CompilationEngine {
 	}	
 	
 	private void compileLetStatement() {
-		eatKeyword(LET);
+		eatKeyword(JackCompiler.LET);
 		
 		String assignmentVariable = current; //we keep track of the variable that is to be assigned
 		eatIdentifier();
 		
 		//if we have an array assignment
-		if ((tokenType == SYMBOL) && (symbol == '[')) { 
+		if ((tokenType == JackCompiler.SYMBOL) && (symbol == '[')) { 
 			WritePushPop("push", assignmentVariable);//we push the address of the array
 			
 			eatSymbol('[');
@@ -303,7 +295,7 @@ public class CompilationEngine {
 		int thisIfLabelCounter = ifLabelCounter;
 		ifLabelCounter++;
 		
-		eatKeyword(IF);
+		eatKeyword(JackCompiler.IF);
 		eatSymbol('(');
 		compileExpression(); //the checked expression
 		eatSymbol(')');
@@ -317,11 +309,11 @@ public class CompilationEngine {
 		eatSymbol('}');		
 		
 		//different labelling logic, depending if we have an if, or an if-else statement
-		if ((tokenType == KEYWORD) && (keyword == ELSE)) {
+		if ((tokenType == JackCompiler.KEYWORD) && (keyword == JackCompiler.ELSE)) {
 			writer.format("goto IF_END%d\n" //pertains to the checked expression being TRUE, program jumps at the end and skips statements 2 
 						+ "label IF_FALSE%d\n", thisIfLabelCounter, thisIfLabelCounter); //pertains to the checked expression being FALSE in case an else statement IS present
 			
-			eatKeyword(ELSE);
+			eatKeyword(JackCompiler.ELSE);
 			eatSymbol('{');
 			compileStatements(); //statements 2
 			eatSymbol('}');
@@ -337,7 +329,7 @@ public class CompilationEngine {
 		int thisWhileLabelCounter = whileLabelCounter;
 		whileLabelCounter++;
 		
-		eatKeyword(WHILE);
+		eatKeyword(JackCompiler.WHILE);
 		writer.format("label WHILE_EXP%d\n", thisWhileLabelCounter); //WHILE_EXPRESSION
 		
 		eatSymbol('(');
@@ -356,7 +348,7 @@ public class CompilationEngine {
 	}	
 	
 	private void compileDoStatement() {
-		eatKeyword(DO);
+		eatKeyword(JackCompiler.DO);
 		compileSubroutineCall();
 		
 		writer.print("pop temp 0\n"); //we discard the return value of the function in the case of a DO statement
@@ -366,7 +358,7 @@ public class CompilationEngine {
 	/*implemented an extra private subroutine,to be used by both compileDoStatement and compileTerm in order to avoid code repetition*/
 	private void compileSubroutineCall() {
 		//if it is a subroutine call from the current class, followed by parentheses:
-				if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
+				if ( (tokenizer.getToken2Type() == JackCompiler.SYMBOL) && (tokenizer.getToken2().charAt(0) == '(') ) {
 					String subroutineName = current;
 					eatIdentifier();
 					
@@ -382,9 +374,9 @@ public class CompilationEngine {
 					writer.format("call %s.%s %d\n", currentClassName, subroutineName, nArgs + 1); 
 				}
 				//if it is a subroutine from another class, OR a subroutine called on another object
-				else if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
+				else if ( (tokenizer.getToken2Type() == JackCompiler.SYMBOL) && (tokenizer.getToken2().charAt(0) == '.') ) {
 					
-					if (symbolTable.KindOf(current) == NONE) { //if the identifier is not recognised, it is assumed to be a class name: we have a function call
+					if (symbolTable.KindOf(current) == JackCompiler.NONE) { //if the identifier is not recognised, it is assumed to be a class name: we have a function call
 						String className = current;
 						eatIdentifier();
 						
@@ -428,10 +420,10 @@ public class CompilationEngine {
 	}
 	
 	private void compileReturnStatement() {
-		eatKeyword(RETURN);
+		eatKeyword(JackCompiler.RETURN);
 		
-		if (currentSubroutineType == CONSTRUCTOR) { //if we have a constructor, then it MUST return "this", the address of the new object
-			eatKeyword(THIS);
+		if (currentSubroutineType == JackCompiler.CONSTRUCTOR) { //if we have a constructor, then it MUST return "this", the address of the new object
+			eatKeyword(JackCompiler.THIS);
 			writer.print("push pointer 0\n" //constructor pushes the reference of the object it's constructing in order to return it
 					   + "return\n");
 			eatSymbol(';');
@@ -467,7 +459,7 @@ public class CompilationEngine {
 
 	private void compileExpression() {
 		compileTerm();
-		while ((tokenType == SYMBOL) && contains(op, symbol) ) {//we keep compiling terms while we keep encountering op symbols
+		while ((tokenType == JackCompiler.SYMBOL) && contains(op, symbol) ) {//we keep compiling terms while we keep encountering op symbols
 			char currentSymbol = symbol;
 			eatSymbol(symbol);
 			
@@ -479,12 +471,12 @@ public class CompilationEngine {
 	
 	private void compileTerm() {
 		
-		if (tokenType == INT_CONST) {
+		if (tokenType == JackCompiler.INT_CONST) {
 			String currentInt = current;
 			eatIntegerConstant();
 			writer.format("push constant %s\n", currentInt);
 		}
-		else if (tokenType == STRING_CONST) {
+		else if (tokenType == JackCompiler.STRING_CONST) {
 			writer.format("push constant %d\n"
 						+ "call String.new 1\n", current.length());
 			for (char c: current.toCharArray()) {
@@ -495,19 +487,19 @@ public class CompilationEngine {
 		}
 		
 		//if it is a keyword constant, like true, false, null or this
-		else if (tokenType == KEYWORD) {
-			if (keyword == TRUE) {
+		else if (tokenType == JackCompiler.KEYWORD) {
+			if (keyword == JackCompiler.TRUE) {
 				writer.print("push constant 0\n"
 						   + "not\n");
-				eatKeyword(TRUE);
+				eatKeyword(JackCompiler.TRUE);
 			}
-			else if ((keyword == FALSE) || (keyword == NULL)) {
+			else if ((keyword == JackCompiler.FALSE) || (keyword == JackCompiler.NULL)) {
 				writer.print("push constant 0\n");
-				eatKeyword(FALSE, NULL);
+				eatKeyword(JackCompiler.FALSE, JackCompiler.NULL);
 			}
-			else if (keyword == THIS) {
+			else if (keyword == JackCompiler.THIS) {
 				writer.print("push pointer 0\n");
-				eatKeyword(THIS);
+				eatKeyword(JackCompiler.THIS);
 			}
 			else {
 				System.out.println(String.format("Syntax Error in file \"%s\" at line %d, for term declaration "
@@ -518,9 +510,9 @@ public class CompilationEngine {
 		}
 		
 		//if the term starts with a variable's name:
-		else if (tokenType == IDENTIFIER) {
+		else if (tokenType == JackCompiler.IDENTIFIER) {
 			//if it is a variable array declaration:
-			if ( (tokenizer.getToken2Type() == SYMBOL) && (tokenizer.getToken2().charAt(0) == '[') ) {
+			if ( (tokenizer.getToken2Type() == JackCompiler.SYMBOL) && (tokenizer.getToken2().charAt(0) == '[') ) {
 				WritePushPop("push", current);
 				eatIdentifier();
 				
@@ -533,7 +525,7 @@ public class CompilationEngine {
 						   + "push that 0\n"); //the value of the array at the [expression] index is then pushed onto the stack
 			}
 			//if it is a subroutine call upon that variable:
-			else if ( (tokenizer.getToken2Type() == SYMBOL) && ((tokenizer.getToken2().charAt(0) == '(') || (tokenizer.getToken2().charAt(0) == '.')) )
+			else if ( (tokenizer.getToken2Type() == JackCompiler.SYMBOL) && ((tokenizer.getToken2().charAt(0) == '(') || (tokenizer.getToken2().charAt(0) == '.')) )
 				compileSubroutineCall();
 			//if it was just a primitive or reference variable:
 			else {
@@ -543,14 +535,14 @@ public class CompilationEngine {
 		}
 		
 		//if it is another expression:
-		else if ((tokenType == SYMBOL) && (symbol == '(')) {
+		else if ((tokenType == JackCompiler.SYMBOL) && (symbol == '(')) {
 			eatSymbol('(');
 			compileExpression();
 			eatSymbol(')');
 		}
 		
 		//if the term starts with an unaryOp symbol:
-		else if ((tokenType == SYMBOL) && ((symbol == '-') || (symbol == '~')) ) {
+		else if ((tokenType == JackCompiler.SYMBOL) && ((symbol == '-') || (symbol == '~')) ) {
 			char thisSymbol = symbol;
 			eatSymbol(symbol);
 			compileTerm();
@@ -576,7 +568,7 @@ public class CompilationEngine {
 			compileExpression();
 			noOfExpressions ++;
 			
-			while ( (tokenType == SYMBOL) && (symbol == ',') ) {
+			while ( (tokenType == JackCompiler.SYMBOL) && (symbol == ',') ) {
 				eatSymbol(',');
 				compileExpression();
 				noOfExpressions ++;
@@ -587,7 +579,7 @@ public class CompilationEngine {
 	
 	/*processes an int keyword, accepting as arguments a list of valid keywords*/
 	private boolean eatKeyword(int... correctKeywords) {
-		if (tokenType == KEYWORD) {
+		if (tokenType == JackCompiler.KEYWORD) {
 			for (int correctKeyword: correctKeywords) {
 				if (keyword == correctKeyword) {
 					advance();
@@ -607,7 +599,7 @@ public class CompilationEngine {
 	
 	/*processes a char symbol, accepting as arguments a list of valid symbols*/
 	private boolean eatSymbol(char... correctSymbols) {
-		if (tokenType == SYMBOL) {
+		if (tokenType == JackCompiler.SYMBOL) {
 			for (char correctSymbol : correctSymbols) {
 				 if (symbol == correctSymbol) { 
 					 advance();
@@ -630,7 +622,7 @@ public class CompilationEngine {
 	
 	/* processes an integer constant */
 	private boolean eatIntegerConstant() {
-		if (tokenType == INT_CONST) {
+		if (tokenType == JackCompiler.INT_CONST) {
 			advance();
 			return true;}
 		else {
@@ -643,7 +635,7 @@ public class CompilationEngine {
 	
 	/* processes a string constant*/
 	private boolean eatStringConstant() {
-		if (tokenType == STRING_CONST) {
+		if (tokenType == JackCompiler.STRING_CONST) {
 				advance(); 
 				return true;
 			}
@@ -657,7 +649,7 @@ public class CompilationEngine {
 	
 	/*processes a String identifier, checking against a list of valid identifiers*/
 	private boolean eatIdentifier(String... correctIdentifiers) {
-		if (tokenType == IDENTIFIER) {
+		if (tokenType == JackCompiler.IDENTIFIER) {
 			if (correctIdentifiers.length == 0) {
 				advance();	
 				return true;
@@ -684,9 +676,9 @@ public class CompilationEngine {
 	
 	/* process a token that is to be a type */
 	private boolean eatType() {
-		if (tokenType == KEYWORD)
-			return eatKeyword(INT, CHAR, BOOLEAN);
-		else if (tokenType == IDENTIFIER)
+		if (tokenType == JackCompiler.KEYWORD)
+			return eatKeyword(JackCompiler.INT, JackCompiler.CHAR, JackCompiler.BOOLEAN);
+		else if (tokenType == JackCompiler.IDENTIFIER)
 			return eatIdentifier();
 		else {
 			System.out.println(String.format("Syntax Error in file \"%s\" at line %d, expected a type "
@@ -699,19 +691,19 @@ public class CompilationEngine {
 	
 	/* returns true if we have the start of an expression, otherwise false*/
 	private boolean isExpression() {
-		if (tokenType == INT_CONST)
+		if (tokenType == JackCompiler.INT_CONST)
 			return true;
-		else if (tokenType == STRING_CONST)
+		else if (tokenType == JackCompiler.STRING_CONST)
 			return true;
 		else if (
-				  (tokenType == KEYWORD) && 
-				  ((keyword == TRUE) || (keyword == FALSE) || (keyword == NULL) || (keyword == THIS)) 
+				  (tokenType == JackCompiler.KEYWORD) && 
+				  ((keyword == JackCompiler.TRUE) || (keyword == JackCompiler.FALSE) || (keyword == JackCompiler.NULL) || (keyword == JackCompiler.THIS)) 
 				 )
 			return true;
-		else if (tokenType == IDENTIFIER)
+		else if (tokenType == JackCompiler.IDENTIFIER)
 			return true;
 		else if (
-				 (tokenType == SYMBOL) &&
+				 (tokenType == JackCompiler.SYMBOL) &&
 		  		 ((symbol == '(') || (symbol == '-') || (symbol == '~'))
 		  		)
 			return true;
@@ -733,9 +725,9 @@ public class CompilationEngine {
 		tokenizer.advance();
 		current = tokenizer.getToken();
 		tokenType = tokenizer.getTokenType();
-		if (tokenType == KEYWORD)
+		if (tokenType == JackCompiler.KEYWORD)
 			keyword = tokenizer.getKeyword();
-		else if (tokenType == SYMBOL)
+		else if (tokenType == JackCompiler.SYMBOL)
 			symbol = tokenizer.getSymbol();
 	}
 	
@@ -743,16 +735,16 @@ public class CompilationEngine {
 	private void WritePushPop(String pushPop, String varName) {
 		
 		switch (symbolTable.KindOf(varName)) {
-		case STATIC:
+		case JackCompiler.STATIC:
 			writer.format("%s static %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
-		case FIELD:
+		case JackCompiler.FIELD:
 			writer.format("%s this %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
-		case ARG:
+		case JackCompiler.ARG:
 			writer.format("%s argument %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
-		case VAR:
+		case JackCompiler.VAR:
 			writer.format("%s local %d\n", pushPop, symbolTable.IndexOf(varName));
 			return;
 		default:
